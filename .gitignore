@@ -1,0 +1,7 @@
+node_modules/
+target/
+dist/
+temp/
+*.wasm
+ts/lib/
+ts/src/hash.ts

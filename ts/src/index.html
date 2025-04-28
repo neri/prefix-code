@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>*</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="theme-color" content="#1976D2" />
+</head>
+
+<header>
+    <span class="app_name">&nbsp;</span>
+</header>
+
+<div id="main" class="main">
+    <textarea id="inputText" rows="5" placeholder="Enter the text to be encoded here.">abracadabra</textarea><br>
+    <input id="execButton" type="button" value="↓ Encode ↓" class="buttonActive" />
+    <br>
+    <!-- <textarea id="encodedText" readonly rows="5" placeholder="Encoded"></textarea><br> -->
+    <div id="resultArea"><span title="sushi"></span></div>
+</div>
+
+<hr>
+<h2>How to use:</h2>
+<p>
+    You can experiment with compressing the input text with <a
+        href="https://en.wikipedia.org/wiki/Canonical_Huffman_code" target="_blank">Canonical Huffman code</a>.<br>
+    As a matter of fact, contrary to expectations, the size of normal text will hardly be reduced.
+</p>
+<ul>
+    <li>The data you enter will not be transmitted over the network.</li>
+    <li>Compression formats are subject to change without notice.</li>
+</ul>
+
+<h2>Source code:</h2>
+<p>
+    <span class="repository_button"></span>
+</p>
+
+<hr>
+<address>
+    <span class="app_name">&nbsp;</span> (<span class="app_version"></span>)<br>
+    <span class="copyright"></span>
+</address>
+
+
+<div id="dialogAlert" class="dialogSeed">
+    <p id="alertMessage"></p>
+</div>
+
+<div id="dialogAbout" class="dialogSeed">
+    <h1><span class="app_name">&nbsp;</span></h1>
+    <p><span class="copyright"></span></p>
+    <p><span class="app_version"></span></p>
+    <hr>
+    <span class="repository_button"></span>
+</div>
+
+</html>

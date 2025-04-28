@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = [ "lib/prefix",
+  "rs",
+]
+
+[profile.release]
+lto = true
+opt-level = "z"
+
+[profile.dev]
