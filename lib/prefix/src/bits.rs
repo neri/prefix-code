@@ -4,58 +4,7 @@ use core::fmt;
 use core::slice::Iter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum BitSize16 {
-    Bit1,
-    Bit2,
-    Bit3,
-    Bit4,
-    Bit5,
-    Bit6,
-    Bit7,
-    Bit8,
-    Bit9,
-    Bit10,
-    Bit11,
-    Bit12,
-    Bit13,
-    Bit14,
-    Bit15,
-    Bit16,
-}
-
-impl BitSize16 {
-    #[inline]
-    pub fn as_usize(&self) -> Option<usize> {
-        let v = *self as usize;
-        (v > 0).then(|| v)
-    }
-
-    #[inline]
-    pub fn new(value: usize) -> Option<Self> {
-        match value {
-            1 => Some(Self::Bit1),
-            2 => Some(Self::Bit2),
-            3 => Some(Self::Bit3),
-            4 => Some(Self::Bit4),
-            5 => Some(Self::Bit5),
-            6 => Some(Self::Bit6),
-            7 => Some(Self::Bit7),
-            8 => Some(Self::Bit8),
-            9 => Some(Self::Bit9),
-            10 => Some(Self::Bit10),
-            11 => Some(Self::Bit11),
-            12 => Some(Self::Bit12),
-            13 => Some(Self::Bit13),
-            14 => Some(Self::Bit14),
-            15 => Some(Self::Bit15),
-            16 => Some(Self::Bit16),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum BitSize32 {
+pub enum BitSize {
     Bit1 = 1,
     Bit2,
     Bit3,
@@ -90,7 +39,7 @@ pub enum BitSize32 {
     Bit32,
 }
 
-impl BitSize32 {
+impl BitSize {
     pub const BIT: Self = Self::Bit1;
 
     pub const BYTE: Self = Self::Bit8;
@@ -141,12 +90,13 @@ impl BitSize32 {
             29 => Some(Self::Bit29),
             30 => Some(Self::Bit30),
             31 => Some(Self::Bit31),
+            32 => Some(Self::Bit32),
             _ => None,
         }
     }
 }
 
-impl core::fmt::Display for BitSize32 {
+impl core::fmt::Display for BitSize {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_usize())
     }
@@ -188,37 +138,37 @@ pub fn nearest_power_of_two(value: usize) -> usize {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AnyBitValue {
     pub value: u32,
-    pub size: BitSize32,
+    pub size: BitSize,
 }
 
 impl AnyBitValue {
     #[inline]
-    pub fn new(size: BitSize32, value: u32) -> Self {
+    pub fn new(size: BitSize, value: u32) -> Self {
         Self { size, value }
     }
 
     #[inline]
     pub fn with_bool(value: bool) -> Self {
-        Self::new(BitSize32::Bit1, value as u32)
+        Self::new(BitSize::Bit1, value as u32)
     }
 
     #[inline]
     pub fn with_nibble(value: u8) -> Self {
-        Self::new(BitSize32::Bit4, value as u32 & 0x0F)
+        Self::new(BitSize::Bit4, value as u32 & 0x0F)
     }
 
     #[inline]
     pub fn with_byte(value: u8) -> Self {
-        Self::new(BitSize32::Bit8, value as u32)
+        Self::new(BitSize::Bit8, value as u32)
     }
 
     #[inline]
     pub fn with_word(value: u32) -> Self {
-        Self::new(BitSize32::Bit32, value)
+        Self::new(BitSize::Bit32, value)
     }
 
     #[inline]
-    pub fn size(&self) -> BitSize32 {
+    pub fn size(&self) -> BitSize {
         self.size
     }
 
@@ -408,20 +358,20 @@ impl<'a> BitStreamReader<'a> {
 impl BitStreamReader<'_> {
     #[inline]
     pub fn read_bool(&mut self) -> Option<bool> {
-        self.read(BitSize32::Bit1).map(|v| v != 0)
+        self.read(BitSize::Bit1).map(|v| v != 0)
     }
 
     #[inline]
     pub fn read_byte(&mut self) -> Option<u8> {
-        self.read(BitSize32::Bit8).map(|v| v as u8)
+        self.read(BitSize::Bit8).map(|v| v as u8)
     }
 
     #[inline]
     pub fn read_nibble(&mut self) -> Option<u8> {
-        self.read(BitSize32::Bit4).map(|v| v as u8)
+        self.read(BitSize::Bit4).map(|v| v as u8)
     }
 
-    pub fn read(&mut self, bits: BitSize32) -> Option<u32> {
+    pub fn read(&mut self, bits: BitSize) -> Option<u32> {
         let bits = bits.as_u8();
         if (self.bit_position & 7) == 0 {
             self.next_byte_bounds()?;
@@ -513,20 +463,20 @@ impl ReverseBitStreamReader<'_> {
 
     #[inline]
     pub fn read_bool(&mut self) -> Option<bool> {
-        self.read(BitSize32::Bit1).map(|v| v != 0)
+        self.read(BitSize::Bit1).map(|v| v != 0)
     }
 
     #[inline]
     pub fn read_byte(&mut self) -> Option<u8> {
-        self.read(BitSize32::Bit8).map(|v| v as u8)
+        self.read(BitSize::Bit8).map(|v| v as u8)
     }
 
     #[inline]
     pub fn read_nibble(&mut self) -> Option<u8> {
-        self.read(BitSize32::Bit4).map(|v| v as u8)
+        self.read(BitSize::Bit4).map(|v| v as u8)
     }
 
-    pub fn read(&mut self, bits: BitSize32) -> Option<u32> {
+    pub fn read(&mut self, bits: BitSize) -> Option<u32> {
         let bits = bits.as_u8();
         if self.bit_position == 0 {
             self.acc = *self.iter.next_back()?;
@@ -587,8 +537,8 @@ mod tests {
                     0xEDB88320,
                     0x04C11DB7,
                 ] {
-                    let padding_size = BitSize32::new(padding_size).unwrap();
-                    let value_size = BitSize32::new(value_size).unwrap();
+                    let padding_size = BitSize::new(padding_size).unwrap();
+                    let value_size = BitSize::new(value_size).unwrap();
                     println!("PADDING {padding_size} VALUE {value_size} PATTERN {pattern:08x}");
                     let pattern_n = !pattern & mask;
 
@@ -672,7 +622,7 @@ mod tests {
             (16, 0x1234, 0x2C48),
             (32, 0x1234_5678, 0x1E6A_2C48),
         ] {
-            let size = BitSize32::new(size).unwrap();
+            let size = BitSize::new(size).unwrap();
             let lhs = AnyBitValue::new(size, lhs);
             let rhs = AnyBitValue::new(size, rhs);
 

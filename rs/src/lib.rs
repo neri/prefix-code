@@ -4,7 +4,7 @@ extern crate alloc;
 
 use prefix::{
     CanonicalPrefixCoder, CanonicalPrefixDecoder,
-    bits::{AnyBitValue, BitSize32, BitStreamReader, BitStreamWriter},
+    bits::{AnyBitValue, BitSize, BitStreamReader, BitStreamWriter},
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -26,9 +26,7 @@ pub fn encode(input: &[u8]) -> String {
 
     let mut prefix_table = Vec::new();
     prefix_table.resize(HLIT, None);
-    for item in
-        CanonicalPrefixCoder::generate_prefix_table(&freq_table, prefix::bits::BitSize16::Bit16)
-    {
+    for item in CanonicalPrefixCoder::generate_prefix_table(&freq_table, BitSize::Bit15) {
         prefix_table[item.0 as usize] = Some(item.1);
     }
 
@@ -80,11 +78,11 @@ pub fn encode(input: &[u8]) -> String {
         .collect::<Vec<_>>();
 
     let mut zip = BitStreamWriter::new();
-    zip.push(&AnyBitValue::new(BitSize32::Bit1, 0b1)); // BFINAL: true
-    zip.push(&AnyBitValue::new(BitSize32::Bit2, 0b10)); // BTYPE: 10 dynamic huffman
-    zip.push(&AnyBitValue::new(BitSize32::Bit5, 0)); // HLIT: 0
-    zip.push(&AnyBitValue::new(BitSize32::Bit5, 0)); // HDIST: 0
-    zip.push(&AnyBitValue::new(BitSize32::Bit4, meta.hclen as u32)); // HCLEN
+    zip.push(&AnyBitValue::new(BitSize::Bit1, 0b1)); // BFINAL: 1 true
+    zip.push(&AnyBitValue::new(BitSize::Bit2, 0b10)); // BTYPE: 10 dynamic huffman
+    zip.push(&AnyBitValue::new(BitSize::Bit5, 0)); // HLIT: 0
+    zip.push(&AnyBitValue::new(BitSize::Bit5, 0)); // HDIST: 0
+    zip.push(&AnyBitValue::new(BitSize::Bit4, meta.hclen as u32)); // HCLEN
     for item in meta.prefix_table.iter() {
         zip.push(item);
     }
@@ -119,20 +117,19 @@ pub fn decode(input: &[u8], len: usize) -> Result<Vec<u8>, DecodeError> {
     let mut reader = BitStreamReader::new(input);
 
     let bfinal = reader
-        .read(BitSize32::Bit1)
-        .ok_or(DecodeError::InvalidInput)?
-        != 0;
+        .read(BitSize::Bit1)
+        .ok_or(DecodeError::InvalidInput)?;
     let btype = reader
-        .read(BitSize32::Bit2)
+        .read(BitSize::Bit2)
         .ok_or(DecodeError::InvalidInput)?;
     let hlit = reader
-        .read(BitSize32::Bit5)
+        .read(BitSize::Bit5)
         .ok_or(DecodeError::InvalidInput)?;
     let hdist = reader
-        .read(BitSize32::Bit5)
+        .read(BitSize::Bit5)
         .ok_or(DecodeError::InvalidInput)?;
 
-    if bfinal != true || btype != 0b10 || hlit != 0 || hdist != 0 {
+    if bfinal != 0b1 || btype != 0b10 || hlit != 0 || hdist != 0 {
         return Err(DecodeError::InvalidData);
     }
 

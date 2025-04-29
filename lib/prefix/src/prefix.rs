@@ -1,5 +1,5 @@
 //! Canonical Prefix Coder
-use crate::bits::{AnyBitValue, BitSize16, BitSize32, BitStreamReader};
+use crate::bits::{AnyBitValue, BitSize, BitStreamReader};
 use crate::stats::*;
 use crate::*;
 use crate::{DecodeError, EncodeError};
@@ -16,13 +16,11 @@ impl CanonicalPrefixCoder {
     pub const REP11Z7: u8 = 18;
 
     pub const PREFIX_PERMUTATION_ORDER: [usize; 19] = [
-        16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1,
-        15,
-        // 17, 18, 0, 1, 2, 3, 4, 5, 16, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+        16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
     ];
 
     pub fn generate_prefix_table_with<K>(
-        max_size: BitSize16,
+        max_size: BitSize,
         mut iter: impl Iterator<Item = K>,
     ) -> Vec<Option<AnyBitValue>>
     where
@@ -46,7 +44,7 @@ impl CanonicalPrefixCoder {
 
     pub fn generate_prefix_table<K>(
         freq_table: &[(K, usize)],
-        max_size: BitSize16,
+        max_size: BitSize,
     ) -> Vec<(K, AnyBitValue)>
     where
         K: Copy + Ord,
@@ -56,7 +54,7 @@ impl CanonicalPrefixCoder {
             input.sort_by(|a, b| a.0.cmp(&b.0));
             let mut result = Vec::new();
             for (index, item) in input.iter().enumerate() {
-                result.push((item.0, AnyBitValue::new(BitSize32::Bit1, index as u32)));
+                result.push((item.0, AnyBitValue::new(BitSize::Bit1, index as u32)));
             }
             return result;
         }
@@ -101,7 +99,7 @@ impl CanonicalPrefixCoder {
                     adj -= 1;
                 }
                 last_bits = size;
-                prefix_codes.push(AnyBitValue::new(BitSize32::new(size as u8).unwrap(), acc));
+                prefix_codes.push(AnyBitValue::new(BitSize::new(size as u8).unwrap(), acc));
                 acc += 1;
             }
         }
@@ -122,7 +120,7 @@ impl CanonicalPrefixCoder {
         prefix_table
     }
 
-    fn _adjust_prefix_lengths(prefix_size_table: &mut [usize], max_size: BitSize16) {
+    fn _adjust_prefix_lengths(prefix_size_table: &mut [usize], max_size: BitSize) {
         let max_size = max_size as usize;
         if prefix_size_table.len() <= max_size {
             return;
@@ -180,7 +178,7 @@ impl CanonicalPrefixCoder {
                         let len = Self::rle_match_len(prev, &input, cursor, 6);
                         if len >= 3 {
                             output.push(AnyBitValue::with_byte(Self::REP3P2));
-                            output.push(AnyBitValue::new(BitSize32::Bit2, len as u32 - 3));
+                            output.push(AnyBitValue::new(BitSize::Bit2, len as u32 - 3));
                             len
                         } else {
                             output.push(AnyBitValue::with_byte(current));
@@ -195,11 +193,11 @@ impl CanonicalPrefixCoder {
                     let len = Self::rle_match_len(0, &input, cursor, 138);
                     if len >= 11 {
                         output.push(AnyBitValue::with_byte(Self::REP11Z7));
-                        output.push(AnyBitValue::new(BitSize32::Bit7, len as u32 - 11));
+                        output.push(AnyBitValue::new(BitSize::Bit7, len as u32 - 11));
                         len
                     } else if len >= 3 {
                         output.push(AnyBitValue::with_byte(Self::REP3Z3));
-                        output.push(AnyBitValue::new(BitSize32::Bit3, len as u32 - 3));
+                        output.push(AnyBitValue::new(BitSize::Bit3, len as u32 - 3));
                         len
                     } else {
                         output.push(AnyBitValue::with_byte(current));
@@ -235,25 +233,24 @@ impl CanonicalPrefixCoder {
         let mut freq_table = BTreeMap::new();
         for table in tables.iter() {
             for bits in table.iter() {
-                if bits.size == BitSize32::OCTET {
+                if bits.size == BitSize::OCTET {
                     freq_table.count_freq(bits.value())
                 }
             }
         }
         let freq_table = freq_table.into_freq_table(true);
 
-        let prefix_table =
-            CanonicalPrefixCoder::generate_prefix_table(&freq_table, BitSize16::Bit7);
+        let prefix_table = CanonicalPrefixCoder::generate_prefix_table(&freq_table, BitSize::Bit7);
         let mut prefix_map = [None; 20];
         for prefix in prefix_table.iter() {
-            assert!(prefix.1.size() < BitSize32::OCTET);
+            assert!(prefix.1.size() < BitSize::OCTET);
             prefix_map[prefix.0 as usize] = Some(prefix.1);
         }
 
         let mut compressed_table = Vec::new();
         for table in tables.iter() {
             for &item in table.iter() {
-                if item.size == BitSize32::OCTET {
+                if item.size == BitSize::OCTET {
                     let prefix_code = prefix_map[item.value as usize].unwrap();
                     compressed_table.push(prefix_code.reversed());
                 } else {
@@ -273,7 +270,7 @@ impl CanonicalPrefixCoder {
         let mut prefix_table = Vec::new();
         for &item in prefix_sizes.iter().take(1 + max_index) {
             prefix_table.push(AnyBitValue::new(
-                BitSize32::Bit3,
+                BitSize::Bit3,
                 item.map(|v| v as u32).unwrap_or_default(),
             ));
         }
@@ -311,9 +308,7 @@ impl CanonicalPrefixCoder {
             .into_iter()
             .take(num_prefixes)
         {
-            let prefix_bit = reader
-                .read(BitSize32::Bit3)
-                .ok_or(DecodeError::InvalidData)?;
+            let prefix_bit = reader.read(BitSize::Bit3).ok_or(DecodeError::InvalidData)?;
             prefixes.push((index as u8, prefix_bit as u8));
         }
 
@@ -333,26 +328,22 @@ impl CanonicalPrefixCoder {
                         prev = decoded;
                     }
                     Self::REP3P2 => {
-                        let ext_bits = 3 + reader
-                            .read(BitSize32::Bit2)
-                            .ok_or(DecodeError::InvalidData)?;
+                        let ext_bits =
+                            3 + reader.read(BitSize::Bit2).ok_or(DecodeError::InvalidData)?;
                         for _ in 0..ext_bits {
                             output.push(prev);
                         }
                     }
                     Self::REP3Z3 => {
-                        let ext_bits = 3 + reader
-                            .read(BitSize32::Bit3)
-                            .ok_or(DecodeError::InvalidData)?;
+                        let ext_bits =
+                            3 + reader.read(BitSize::Bit3).ok_or(DecodeError::InvalidData)?;
                         for _ in 0..ext_bits {
                             output.push(0);
                         }
                     }
                     Self::REP11Z7 => {
-                        let ext_bits = 11
-                            + reader
-                                .read(BitSize32::Bit7)
-                                .ok_or(DecodeError::InvalidData)?;
+                        let ext_bits =
+                            11 + reader.read(BitSize::Bit7).ok_or(DecodeError::InvalidData)?;
                         for _ in 0..ext_bits {
                             output.push(0);
                         }
@@ -449,7 +440,7 @@ impl CanonicalPrefixDecoder {
                 }
                 last_bits = bits;
                 prefix_table[(item.0).into()] =
-                    Some(AnyBitValue::new(BitSize32::new(bits).unwrap(), acc));
+                    Some(AnyBitValue::new(BitSize::new(bits).unwrap(), acc));
                 acc += 1;
             }
         }
@@ -468,19 +459,19 @@ impl CanonicalPrefixDecoder {
                 return Ok(*decoded);
             } else {
                 if read_bits >= self.max_size {
-                    for item in self.prefix_map.iter() {
-                        let size = item.0 >> 24;
-                        let value = item.0 & 0xFFFF;
-                        let bits = AnyBitValue::new(BitSize32::new(size as u8).unwrap(), value);
-                        println!("DECODED {:02x} {:2} {:04x} {}", item.1, size, value, bits);
-                    }
-                    panic!(
-                        "UNKNOWN CHC VALUE {} {:04x} {}",
-                        read_bits,
-                        value,
-                        AnyBitValue::new(BitSize32::new(read_bits).unwrap(), value)
-                    );
-                    // return Err(DecodeError::InvalidData);
+                    // for item in self.prefix_map.iter() {
+                    //     let size = item.0 >> 24;
+                    //     let value = item.0 & 0xFFFF;
+                    //     let bits = AnyBitValue::new(BitSize::new(size as u8).unwrap(), value);
+                    //     println!("DECODED {:02x} {:2} {:04x} {}", item.1, size, value, bits);
+                    // }
+                    // panic!(
+                    //     "UNKNOWN CHC VALUE {} {:04x} {}",
+                    //     read_bits,
+                    //     value,
+                    //     AnyBitValue::new(BitSize::new(read_bits).unwrap(), value)
+                    // );
+                    return Err(DecodeError::InvalidData);
                 }
                 let read = reader.read_bool().ok_or(DecodeError::InvalidData)?;
                 value = (value << 1) | read as u32;

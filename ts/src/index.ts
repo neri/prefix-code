@@ -236,9 +236,6 @@ class App {
                 th1Tag.colSpan = 2;
                 th1Tag.appendChild(document.createTextNode("Symbol"));
                 trTag.appendChild(th1Tag);
-                // const th2Tag = document.createElement('th');
-                // th2Tag.appendChild(document.createTextNode("Char"));
-                // trTag.appendChild(th2Tag);
                 const th3Tag = document.createElement('th');
                 th3Tag.colSpan = 2;
                 th3Tag.appendChild(document.createTextNode("Frequency"));
