@@ -14,13 +14,33 @@
 <div id="main" class="main">
     <textarea id="inputText" rows="5" placeholder="Enter the text to be encoded here.">abracadabra</textarea><br>
     <input id="execButton" type="button" value="↓ Encode ↓" class="buttonActive" />
+    <label>
+        Max Bit Length:
+        <select id="maxBitSize">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+            <option value="11">11</option>
+            <option value="12">12</option>
+            <option value="13">13</option>
+            <option value="14">14</option>
+            <option value="15" selected>15</option>
+        </select>
+    </label>
     <br>
     <!-- <textarea id="encodedText" readonly rows="5" placeholder="Encoded"></textarea><br> -->
     <div id="resultArea"><span title="sushi"></span></div>
 </div>
 
 <hr>
-<h2>How to use:</h2>
+<h2>About:</h2>
 <p>
     You can experiment with compressing the input text with <a
         href="https://en.wikipedia.org/wiki/Canonical_Huffman_code" target="_blank">Canonical Huffman code</a>.<br>
@@ -28,10 +48,8 @@
 </p>
 <ul>
     <li>The data you enter will not be transmitted over the network.</li>
-    <li>Compression formats are subject to change without notice.</li>
+    <li>Output formats are subject to change without notice.</li>
 </ul>
-
-<h2>Source code:</h2>
 <p>
     <span class="repository_button"></span>
 </p>

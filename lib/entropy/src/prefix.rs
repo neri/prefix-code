@@ -1,8 +1,10 @@
 //! Canonical Prefix Coder
+
+use crate::DecodeError;
 use crate::bits::{AnyBitValue, BitSize, BitStreamReader};
 use crate::stats::*;
 use crate::*;
-use crate::{DecodeError, EncodeError};
+use core::convert::Infallible;
 use core::{cmp, fmt};
 
 pub struct CanonicalPrefixCoder;
@@ -15,8 +17,12 @@ impl CanonicalPrefixCoder {
     /// Repeat 0 `11 + readbits(7)` times
     pub const REP11Z7: u8 = 18;
 
-    pub const PREFIX_PERMUTATION_ORDER: [usize; 19] = [
+    pub const PREFIX_PERMUTATION_ORDER_DEFLATE: &[u8; 19] = &[
         16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
+    ];
+
+    pub const PREFIX_PERMUTATION_ORDER_WEBP: &[u8; 19] = &[
+        17, 18, 0, 1, 2, 3, 4, 5, 16, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
     ];
 
     pub fn generate_prefix_table_with<K>(
@@ -32,7 +38,7 @@ impl CanonicalPrefixCoder {
             freq_table.count_freq(key);
         }
         let freq_table = freq_table.into_freq_table(true);
-        let prefix_table = CanonicalPrefixCoder::generate_prefix_table(&freq_table, max_size);
+        let prefix_table = CanonicalPrefixCoder::generate_prefix_table(&freq_table, max_size, None);
         let max_symbol = prefix_table.iter().fold(0usize, |a, v| a.max((v.0).into()));
         let mut prefix_map = Vec::new();
         prefix_map.resize(1 + max_symbol, None);
@@ -45,6 +51,7 @@ impl CanonicalPrefixCoder {
     pub fn generate_prefix_table<K>(
         freq_table: &[(K, usize)],
         max_size: BitSize,
+        result_tree: Option<&mut Vec<HuffmanTreeNode<K>>>,
     ) -> Vec<(K, AnyBitValue)>
     where
         K: Copy + Ord,
@@ -84,6 +91,12 @@ impl CanonicalPrefixCoder {
         prefix_lengths.resize(actual_max_len as usize, 0);
         for item in prefix_size_table.into_iter() {
             prefix_lengths[item.0 as usize] = item.1;
+        }
+
+        if let Some(result_tree) = result_tree {
+            result_tree.clear();
+            result_tree.push(tree.remove(0));
+            drop(tree);
         }
 
         Self::_adjust_prefix_lengths(&mut prefix_lengths, max_size);
@@ -211,7 +224,8 @@ impl CanonicalPrefixCoder {
 
     pub fn encode_single_prefix_table(
         input: &[Option<AnyBitValue>],
-    ) -> Result<MetaPrefixTable, EncodeError> {
+        permutation_order: PermutationOrder,
+    ) -> Result<MetaPrefixTable, Infallible> {
         let table0 = input
             .iter()
             .map(|v| match v {
@@ -219,10 +233,18 @@ impl CanonicalPrefixCoder {
                 None => 0,
             })
             .collect::<Vec<_>>();
-        Self::encode_prefix_tables(&[&table0])
+        Self::encode_prefix_tables(&[&table0], permutation_order)
     }
 
-    pub fn encode_prefix_tables(tables: &[&[u8]]) -> Result<MetaPrefixTable, EncodeError> {
+    pub fn encode_prefix_tables(
+        tables: &[&[u8]],
+        permutation_order: PermutationOrder,
+    ) -> Result<MetaPrefixTable, Infallible> {
+        let permutation_order = match permutation_order {
+            PermutationOrder::Deflate => Self::PREFIX_PERMUTATION_ORDER_DEFLATE,
+            PermutationOrder::WebP => Self::PREFIX_PERMUTATION_ORDER_WEBP,
+        };
+
         let hlits = tables.iter().map(|v| v.len()).collect::<Vec<_>>();
 
         let tables = tables
@@ -240,7 +262,8 @@ impl CanonicalPrefixCoder {
         }
         let freq_table = freq_table.into_freq_table(true);
 
-        let prefix_table = CanonicalPrefixCoder::generate_prefix_table(&freq_table, BitSize::Bit7);
+        let prefix_table =
+            CanonicalPrefixCoder::generate_prefix_table(&freq_table, BitSize::Bit7, None);
         let mut prefix_map = [None; 20];
         for prefix in prefix_table.iter() {
             assert!(prefix.1.size() < BitSize::OCTET);
@@ -261,8 +284,8 @@ impl CanonicalPrefixCoder {
 
         let mut prefix_sizes = [None; 19];
         let mut max_index = 3;
-        for (p, q) in Self::PREFIX_PERMUTATION_ORDER.into_iter().enumerate() {
-            if let Some(item) = prefix_map[q] {
+        for (p, &q) in permutation_order.iter().enumerate() {
+            if let Some(item) = prefix_map[q as usize] {
                 max_index = max_index.max(p);
                 prefix_sizes[p] = Some(item.size);
             }
@@ -277,7 +300,7 @@ impl CanonicalPrefixCoder {
 
         Ok(MetaPrefixTable {
             hlits,
-            hclen: max_index - 3,
+            hclen: max_index as u8 - 3,
             prefix_table,
             payload: compressed_table,
         })
@@ -286,10 +309,11 @@ impl CanonicalPrefixCoder {
     pub fn decode_prefix_table_from_bytes(
         bytes: &[u8],
         output_size: usize,
+        permutation_order: PermutationOrder,
     ) -> Result<Vec<u8>, DecodeError> {
         let mut reader = BitStreamReader::new(bytes);
         let mut output = Vec::<u8>::new();
-        Self::decode_prefix_tables(&mut reader, &mut output, &[output_size])?;
+        Self::decode_prefix_tables(&mut reader, &mut output, &[output_size], permutation_order)?;
         Ok(output)
     }
 
@@ -297,19 +321,19 @@ impl CanonicalPrefixCoder {
         reader: &mut BitStreamReader<'a>,
         output: &mut Vec<u8>,
         output_sizes: &[usize],
+        permutation_order: PermutationOrder,
     ) -> Result<(), DecodeError> {
-        output
-            .try_reserve_exact(output_sizes.iter().fold(0, |a, v| a + v))
-            .map_err(|_| DecodeError::OutOfMemory)?;
+        let permutation_order = match permutation_order {
+            PermutationOrder::Deflate => Self::PREFIX_PERMUTATION_ORDER_DEFLATE,
+            PermutationOrder::WebP => Self::PREFIX_PERMUTATION_ORDER_WEBP,
+        };
+        output.reserve(output_sizes.iter().fold(0, |a, v| a + v));
 
         let num_prefixes = 4 + reader.read_nibble().ok_or(DecodeError::InvalidData)? as usize;
         let mut prefixes = Vec::new();
-        for index in Self::PREFIX_PERMUTATION_ORDER
-            .into_iter()
-            .take(num_prefixes)
-        {
+        for &index in permutation_order.iter().take(num_prefixes) {
             let prefix_bit = reader.read(BitSize::Bit3).ok_or(DecodeError::InvalidData)?;
-            prefixes.push((index as u8, prefix_bit as u8));
+            prefixes.push((index, prefix_bit as u8));
         }
 
         let decoder = CanonicalPrefixDecoder::new(&prefixes);
@@ -360,7 +384,7 @@ impl CanonicalPrefixCoder {
 #[derive(Debug)]
 pub struct MetaPrefixTable {
     pub hlits: Vec<usize>,
-    pub hclen: usize,
+    pub hclen: u8,
     pub prefix_table: Vec<AnyBitValue>,
     pub payload: Vec<AnyBitValue>,
 }
@@ -481,8 +505,15 @@ impl CanonicalPrefixDecoder {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub enum PermutationOrder {
+    #[default]
+    Deflate,
+    WebP,
+}
+
 pub struct HuffmanTreeNode<K> {
-    data: K,
+    symbol: K,
     freq: usize,
     left: Option<Box<HuffmanTreeNode<K>>>,
     right: Option<Box<HuffmanTreeNode<K>>>,
@@ -490,9 +521,9 @@ pub struct HuffmanTreeNode<K> {
 
 impl<K: Copy> HuffmanTreeNode<K> {
     #[inline]
-    pub fn make_leaf(data: K, freq: usize) -> Self {
+    pub fn make_leaf(symbol: K, freq: usize) -> Self {
         Self {
-            data,
+            symbol,
             freq,
             left: None,
             right: None,
@@ -503,7 +534,7 @@ impl<K: Copy> HuffmanTreeNode<K> {
     pub fn make_pair(left: Self, right: Self) -> Self {
         let freq = left.freq + right.freq;
         Self {
-            data: left.data,
+            symbol: left.symbol,
             freq,
             left: Some(Box::new(left)),
             right: Some(Box::new(right)),
@@ -512,7 +543,27 @@ impl<K: Copy> HuffmanTreeNode<K> {
 
     #[inline]
     pub fn is_leaf(&self) -> bool {
-        matches!(self.left, None) && matches!(self.right, None)
+        self.left.is_none() && self.right.is_none()
+    }
+
+    #[inline]
+    pub const fn freq(&self) -> usize {
+        self.freq
+    }
+
+    #[inline]
+    pub fn symbol(&self) -> Option<K> {
+        self.is_leaf().then(|| self.symbol)
+    }
+
+    #[inline]
+    pub fn left<'a>(&'a self) -> Option<&'a Self> {
+        self.left.as_ref().map(|v| v.as_ref())
+    }
+
+    #[inline]
+    pub fn right<'a>(&'a self) -> Option<&'a Self> {
+        self.right.as_ref().map(|v| v.as_ref())
     }
 
     fn count_prefix_size(&self, map: &mut BTreeMap<u8, usize>, chc_bit: u8) {
@@ -533,7 +584,7 @@ impl<K: Copy> HuffmanTreeNode<K> {
     {
         match other.freq.cmp(&self.freq) {
             cmp::Ordering::Equal => match (self.is_leaf(), other.is_leaf()) {
-                (true, true) | (false, false) => other.data.cmp(&self.data),
+                (true, true) | (false, false) => other.symbol.cmp(&self.symbol),
                 (true, false) => cmp::Ordering::Greater,
                 (false, true) => cmp::Ordering::Less,
             },
@@ -545,7 +596,7 @@ impl<K: Copy> HuffmanTreeNode<K> {
 impl<K: fmt::Debug> fmt::Debug for HuffmanTreeNode<K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HuffmanTreeNode")
-            .field("data", &self.data)
+            .field("symbol", &self.symbol)
             .field("freq", &self.freq)
             .field("left", &self.left)
             .field("right", &self.right)
@@ -553,13 +604,139 @@ impl<K: fmt::Debug> fmt::Debug for HuffmanTreeNode<K> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn chc() {
-        // Count 	270 	20 	10 	0 	1 	6 	1
-        // Huffman 	0 	10 	110 	- 	11110 	1110 	11111
-        // maxLength = 4 	0 	10 	1100 	- 	1101 	1110 	1111
-        // maxLength = 3 	00 	01 	100 	- 	101 	110 	111
+/// Simple Prefix Coding
+pub struct SimplePrefixCoder {
+    pub table: SimplePrefixTable,
+    pub data: Vec<u8>,
+    pub len: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SimplePrefixTable {
+    Repeat(u8),
+    Binary(u8, u8),
+    NestedRepeat(u8, u8, u8),
+    NestedBinary(u8, u8, u8, u8),
+}
+
+impl SimplePrefixCoder {
+    pub fn encode(input: &[u8], allows_nest: bool) -> Option<Self> {
+        let mut freq_table = Vec::with_capacity(256);
+        freq_table.resize(256, 0usize);
+        input.iter().for_each(|&byte| {
+            freq_table[byte as usize] += 1;
+        });
+
+        let mut key1 = None;
+        let mut key2 = None;
+        for (index, &freq) in freq_table.iter().enumerate() {
+            if freq > 0 {
+                if key1.is_none() {
+                    key1 = Some(index as u8);
+                } else if key2.is_none() {
+                    key2 = Some(index as u8);
+                } else {
+                    // More than 2 unique values
+                    return None;
+                }
+            }
+        }
+        let Some(key1) = key1 else {
+            return None;
+        };
+        let key2 = match key2 {
+            Some(key2) => key2,
+            None => {
+                // Only one unique value
+                return Some(Self {
+                    table: SimplePrefixTable::Repeat(key1),
+                    data: Vec::new(),
+                    len: input.len(),
+                });
+            }
+        };
+
+        let mut data = Vec::new();
+        let mut acc = 0;
+        let mut bit = 0x01;
+        for &byte in input.iter() {
+            if byte == key2 {
+                acc |= bit;
+            }
+            if bit == 0x80 {
+                data.push(acc);
+                acc = 0;
+                bit = 0x01;
+            } else {
+                bit <<= 1;
+            }
+        }
+        if bit != 0x01 {
+            data.push(acc);
+        }
+
+        let mut table = SimplePrefixTable::Binary(key1, key2);
+        if allows_nest && data.len() >= 4 {
+            if let Some(nested) = Self::encode(&data, false) {
+                match nested.table {
+                    SimplePrefixTable::Repeat(key3) => {
+                        table = SimplePrefixTable::NestedRepeat(key1, key2, key3);
+                        data.clear();
+                        data.extend_from_slice(nested.data.as_slice());
+                    }
+                    SimplePrefixTable::Binary(key3, key4) => {
+                        table = SimplePrefixTable::NestedBinary(key1, key2, key3, key4);
+                        data.clear();
+                        data.extend_from_slice(nested.data.as_slice());
+                    }
+                    SimplePrefixTable::NestedRepeat(_, _, _)
+                    | SimplePrefixTable::NestedBinary(_, _, _, _) => {
+                        unreachable!()
+                    }
+                }
+            }
+        }
+
+        Some(Self {
+            table,
+            data,
+            len: input.len(),
+        })
+    }
+
+    pub fn decode(&self) -> Vec<u8> {
+        todo!()
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut vec = Vec::new();
+        match self.table {
+            SimplePrefixTable::Repeat(key) => {
+                vec.push(0);
+                vec.push(key);
+            }
+            SimplePrefixTable::Binary(key1, key2) => {
+                vec.push(1);
+                vec.push(key1);
+                vec.push(key2);
+                vec.extend_from_slice(&self.data);
+            }
+            SimplePrefixTable::NestedRepeat(key1, key2, key3) => {
+                vec.push(2);
+                vec.push(key1);
+                vec.push(key2);
+                vec.push(key3);
+                vec.extend_from_slice(&self.data);
+            }
+            SimplePrefixTable::NestedBinary(key1, key2, key3, key4) => {
+                vec.push(3);
+                vec.push(key1);
+                vec.push(key2);
+                vec.push(key3);
+                vec.push(key4);
+                vec.extend_from_slice(&self.data);
+            }
+        }
+        vec
     }
 }

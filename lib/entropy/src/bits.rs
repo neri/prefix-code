@@ -57,6 +57,11 @@ impl BitSize {
     }
 
     #[inline]
+    pub fn as_u32(&self) -> u32 {
+        *self as u32
+    }
+
+    #[inline]
     pub const fn new(value: u8) -> Option<Self> {
         match value {
             1 => Some(Self::Bit1),
@@ -192,7 +197,7 @@ impl AnyBitValue {
     {
         let mut bs = BitStreamWriter::new();
         for ext_bit in iter {
-            bs.push(&ext_bit);
+            bs.push(ext_bit);
         }
         bs.into_bytes()
     }
@@ -275,22 +280,22 @@ impl BitStreamWriter {
 
     #[inline]
     pub fn push_bool(&mut self, value: bool) {
-        self.push(&AnyBitValue::with_bool(value));
+        self.push(AnyBitValue::with_bool(value));
     }
 
     #[inline]
     pub fn push_byte(&mut self, value: u8) {
-        self.push(&AnyBitValue::with_byte(value))
+        self.push(AnyBitValue::with_byte(value))
     }
 
     #[inline]
     pub fn push_slice(&mut self, value: &[AnyBitValue]) {
-        for item in value.iter() {
+        for &item in value.iter() {
             self.push(item);
         }
     }
 
-    pub fn push(&mut self, value: &AnyBitValue) {
+    pub fn push(&mut self, value: AnyBitValue) {
         let lowest_bits = 8 - self.bit_position;
         let lowest_bit_mask = ((1u32 << value.size.as_u8().min(lowest_bits)) - 1) as u8;
         let mut acc = self.acc | ((value.value as u8 & lowest_bit_mask) << self.bit_position);
@@ -543,12 +548,12 @@ mod tests {
                     let pattern_n = !pattern & mask;
 
                     let mut writer = BitStreamWriter::new();
-                    writer.push(&AnyBitValue::new(padding_size, 0));
-                    writer.push(&AnyBitValue::new(value_size, pattern));
-                    writer.push(&AnyBitValue::new(padding_size, u32::MAX));
-                    writer.push(&AnyBitValue::new(value_size, pattern_n));
-                    writer.push(&AnyBitValue::new(padding_size, 0));
-                    writer.push(&AnyBitValue::with_bool(true));
+                    writer.push(AnyBitValue::new(padding_size, 0));
+                    writer.push(AnyBitValue::new(value_size, pattern));
+                    writer.push(AnyBitValue::new(padding_size, u32::MAX));
+                    writer.push(AnyBitValue::new(value_size, pattern_n));
+                    writer.push(AnyBitValue::new(padding_size, 0));
+                    writer.push(AnyBitValue::with_bool(true));
                     let stream = writer.into_bytes();
                     println!("DATA: {:02x?}", &stream);
 

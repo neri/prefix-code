@@ -1,10 +1,10 @@
-/// Prefix Code Tester
+/// Playground for Compression
 ///
 /// Copyright (c) 2025 Nerry, ALL RIGHTS RESERVED
 ///
 /// https://github.com/neri/prefix-code
 ///
-const APP_NAME = "Prefix Code Tester";
+const APP_NAME = "Playground for Compression";
 const COPYRIGHT = "Copyright (c) 2025 Nerry, ALL RIGHTS RESERVED.";
 const REPOSITORY_URL = "https://github.com/neri/prefix-code";
 const VERSION_STRING = "0.1.0";
@@ -33,7 +33,7 @@ class App {
     private currentTitle = '';
     private baseName = 'download';
 
-    triggerCompress = debounce(() => this.compressRealTime(), 500);
+    triggerCompress = debounce(() => this.updateResult(), 500);
 
     onload() {
         const html = $('html') as HTMLElement;
@@ -66,7 +66,11 @@ class App {
         });
 
         ($('#execButton') as HTMLButtonElement | null)?.addEventListener('click', () => {
-            this.compressRealTime();
+            this.updateResult();
+        });
+
+        ($('#maxBitSize') as HTMLSelectElement | null)?.addEventListener('change', () => {
+            this.updateResult();
         });
 
         ($('body') as HTMLBodyElement).style.display = 'block';
@@ -95,25 +99,41 @@ class App {
         return iconElement;
     }
 
-    compressRealTime() {
+    updateResult() {
         const inputText = ($('#inputText') as HTMLTextAreaElement | null)?.value || "";
         this.doCompress(inputText);
     }
 
     doCompress(inputText: string) {
         const resultArea = ($('#resultArea') as HTMLElement);
+        resultArea.innerText = "";
+        const maxBitSize = parseInt(($('#maxBitSize') as HTMLSelectElement | null)?.value || "") || 0;
         if (inputText.length === 0) {
             // ($('#encodedText') as HTMLTextAreaElement).value = "";
-            resultArea.innerText = "";
             return
         };
-        const input = new TextEncoder().encode(inputText);
-        const result = libprefix.encode(input);
-        const json = JSON.parse(result) as EncodedResult;
-        // console.log("Result: ", json);
-        resultArea.innerText = "";
 
-        const encodedBase64 = arrayBufferToBase64(json.encoded_zlib);
+        const input = new TextEncoder().encode(inputText);
+        let result: string;
+        try {
+            result = libprefix.encode_chc(input, maxBitSize);
+        } catch (e) {
+            {
+                const hrTag = document.createElement('hr');
+                resultArea.appendChild(hrTag);
+
+                const h2tag = document.createElement('h2');
+                h2tag.className = 'error';
+                h2tag.appendChild(document.createTextNode(`ERROR: ${e}`));
+                resultArea.appendChild(h2tag);
+            }
+            return;
+        }
+        const json = JSON.parse(result) as EncodeChcResult;
+        // console.log("Result: ", json);
+
+        const encodedBase64 = arrayToHex(json.encoded_zlib, ' ');
+        //arrayBufferToBase64(json.encoded_zlib);
         // ($('#encodedText') as HTMLTextAreaElement).value = encodedBase64;
 
         {
@@ -126,8 +146,6 @@ class App {
         }
 
         {
-            const data = json.input_value.toString();
-
             const h3Tag = document.createElement('h3');
             h3Tag.appendChild(document.createTextNode("Input:"));
             resultArea.appendChild(h3Tag);
@@ -143,7 +161,7 @@ class App {
 
             const preTag = document.createElement('div');
             preTag.className = 'code';
-            preTag.appendChild(document.createTextNode(data));
+            preTag.appendChild(document.createTextNode(arrayToHex(input)));
             detailsTag.appendChild(preTag);
 
             resultArea.appendChild(detailsTag);
@@ -158,8 +176,13 @@ class App {
             detailsTag.open = true;
 
             const summaryTag = document.createElement('summary');
-            const rate = json.output_rate.toLocaleString('en', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-            const message = `# ${json.output_bits} bits <= ${json.input_bits} bits (${rate}%)`;
+            const rate = (json.output_bits / json.input_bits * 100.0).toLocaleString('en', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+            const ideal_bits = Math.ceil(json.input_len * json.input_entropy);
+            const ideal_rate = (json.output_bits / ideal_bits * 100.0).toLocaleString('en', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+            let message = `# ${json.output_bits} bits <= ${json.input_bits} bits (${rate}%)`;
+            if (ideal_bits > 0) {
+                message += `, ideal ${ideal_bits} bits (${ideal_rate}%)`;
+            }
             summaryTag.appendChild(document.createTextNode(message));
             detailsTag.appendChild(summaryTag);
 
@@ -195,28 +218,48 @@ class App {
         }
 
         {
+            const encodedWebpBase64 = arrayToHex(json.encoded_webp, ' ');
+            //arrayBufferToBase64(json.encoded_webp);
+
             const h3tag = document.createElement('h3');
-            h3tag.appendChild(document.createTextNode("Decoding Test:"));
+            h3tag.appendChild(document.createTextNode("Output like webp:"));
             resultArea.appendChild(h3tag);
 
+            const detailsTag = document.createElement('details');
+            detailsTag.open = false;
+
+            const summaryTag = document.createElement('summary');
+            const actualRate = (json.encoded_webp.length / json.input_len * 100.0).toLocaleString('en', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+            const entropy = json.webp_entropy.toLocaleString('en', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+            const message = `# length ${json.encoded_webp.length} (${actualRate}%), entropy ${entropy}`;
+            summaryTag.appendChild(document.createTextNode(message));
+            detailsTag.appendChild(summaryTag);
+
+            const preTag = document.createElement('div');
+            preTag.className = 'code';
+            preTag.appendChild(document.createTextNode(encodedWebpBase64));
+            detailsTag.appendChild(preTag);
+
+            resultArea.appendChild(detailsTag);
+        }
+
+        {
             try {
                 const decoded =
-                    libprefix.decode(json.encoded_zlib, input.length);
+                    libprefix.decode_chc(json.encoded_zlib, input.length);
 
                 if (decoded.toString() === input.toString()) {
-                    const divTag = document.createElement('div');
-                    divTag.appendChild(document.createTextNode(`# Ok, IDENTICAL`));
-                    resultArea.appendChild(divTag);
+                    // ok, identical
                 } else {
                     const divTag = document.createElement('div');
                     divTag.className = 'error';
-                    divTag.appendChild(document.createTextNode(`DECODE FAILED`));
+                    divTag.appendChild(document.createTextNode(`DECODE FAILED, PLEASE REPORT DETAILS`));
                     resultArea.appendChild(divTag);
                 }
             } catch (e) {
                 const divTag = document.createElement('div');
                 divTag.className = 'error';
-                divTag.appendChild(document.createTextNode(`DECODE ERROR: ${String(e)}`));
+                divTag.appendChild(document.createTextNode(`DECODE ERROR: ${String(e)}, PLEASE REPORT DETAILS`));
                 resultArea.appendChild(divTag);
             }
         }
@@ -285,6 +328,17 @@ class App {
             resultArea.appendChild(tableTag);
         }
 
+        if (json.huffman_tree.length > 0) {
+            const h3tag = document.createElement('h3');
+            h3tag.appendChild(document.createTextNode("Reference Huffman Tree:"));
+            resultArea.appendChild(h3tag);
+
+            const preTag = document.createElement('pre');
+            // preTag.className = 'code';
+            preTag.appendChild(document.createTextNode(json.huffman_tree));
+            resultArea.appendChild(preTag);
+        }
+
     }
 }
 
@@ -330,17 +384,18 @@ class AboutDialog extends Dialog {
     }
 }
 
-class EncodedResult {
-    input_value: Uint8Array = new Uint8Array(0);
-    prefix_table: PrefixTableEntry[] = [];
+class EncodeChcResult {
     input_len: number = 0;
     input_bits: number = 0;
     input_entropy: number = 0;
     output_bits: number = 0;
-    output_rate: number = 0;
     output_entropy: number = 0;
+    prefix_table: PrefixTableEntry[] = [];
     encoded_str: string[] = [];
     encoded_zlib: Uint8Array = new Uint8Array(0);
+    encoded_webp: Uint8Array = new Uint8Array(0);
+    webp_entropy: number = 0;
+    huffman_tree: string = "";
 }
 
 class PrefixTableEntry {
@@ -367,6 +422,13 @@ const arrayBufferToBase64 = (bytes: Uint8Array) => {
     }
     return btoa(array.join(''));
 }
+
+const arrayToHex = (bytes: Uint8Array, delimiter: string = ' ') => {
+    const encoded: string[] = [];
+    bytes.forEach((val) => encoded.push(val.toString(16).padStart(2, '0')));
+    return encoded.join(delimiter);
+}
+
 
 const roundToEven = (v: number): number => {
     if (!Number.isFinite(v)) {

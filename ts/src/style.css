@@ -5,7 +5,7 @@
     --blue: #2196F3;
     --white: #ffffff;
     --red: #F44336;
-    --yellow: ##FFEB3B;
+    --yellow: #FFEB3B;
 
     --gray100: #CFD8DC;
     --gray300: #90A4AE;
@@ -124,7 +124,7 @@ fieldset {
 
 .error {
     background-color: var(--red);
-    color: var(--yellow)
+    color: var(--yellow);
 }
 
 h1 {
@@ -147,6 +147,15 @@ hr {
     padding: 0;
     border: none;
     border-bottom: var(--gray) dashed 1px;
+}
+
+pre {
+    background: var(--light-gray);
+    color: var(--black);
+    margin: 0;
+    padding: 4px 8px;
+    overflow-wrap: break-word;
+    overflow: auto;
 }
 
 .code {

@@ -9,7 +9,7 @@ version = "0.1.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-prefix = { path = "../lib/prefix" }
+entropy = { path = "../lib/entropy" }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }

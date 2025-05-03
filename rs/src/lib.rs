@@ -2,9 +2,10 @@
 
 extern crate alloc;
 
-use prefix::{
-    CanonicalPrefixCoder, CanonicalPrefixDecoder,
+use core::fmt::Display;
+use entropy::{
     bits::{AnyBitValue, BitSize, BitStreamReader, BitStreamWriter},
+    prefix::{CanonicalPrefixCoder, CanonicalPrefixDecoder, HuffmanTreeNode, PermutationOrder},
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -12,7 +13,13 @@ use wasm_bindgen::prelude::*;
 const HLIT: usize = 257;
 
 #[wasm_bindgen]
-pub fn encode(input: &[u8]) -> String {
+pub fn encode_chc(input: &[u8], max_size: u8) -> Result<String, String> {
+    _encode_chc(input, max_size).map_err(|e| format!("{}", e))
+}
+
+pub fn _encode_chc(input: &[u8], max_size: u8) -> Result<String, EncodeError> {
+    let max_size = BitSize::new(max_size).ok_or(EncodeError::InvalidInput)?;
+
     let mut freq_table = Vec::new();
     freq_table.resize(256, 0usize);
     for &byte in input.iter() {
@@ -21,22 +28,23 @@ pub fn encode(input: &[u8]) -> String {
     let freq_table = freq_table
         .iter()
         .enumerate()
-        .filter_map(|(i, &v)| (v > 0).then(|| (i, v)))
+        .filter_map(|(i, &v)| (v > 0).then(|| (i as u8, v)))
         .collect::<Vec<_>>();
 
     let mut prefix_table = Vec::new();
+    let mut result_tree = Vec::new();
     prefix_table.resize(HLIT, None);
-    for item in CanonicalPrefixCoder::generate_prefix_table(&freq_table, BitSize::Bit15) {
+    for item in
+        CanonicalPrefixCoder::generate_prefix_table(&freq_table, max_size, Some(&mut result_tree))
+    {
         prefix_table[item.0 as usize] = Some(item.1);
     }
-
-    let meta = CanonicalPrefixCoder::encode_single_prefix_table(&prefix_table).unwrap();
 
     let mut encoded_str = Vec::new();
     let mut encoded_codes = Vec::new();
     let mut output_bits = 0;
     for &byte in input.iter() {
-        let code = prefix_table[byte as usize].unwrap();
+        let code = prefix_table[byte as usize].ok_or(EncodeError::InvalidInput)?;
         encoded_codes.push(code);
         encoded_str.push(format!("{}", code));
         output_bits += code.size() as usize;
@@ -50,22 +58,11 @@ pub fn encode(input: &[u8]) -> String {
     prefix_table2.sort_by(|a, b| a.0.cmp(&b.0));
 
     let input_len = input.len() as f64;
-    let prefix_table = freq_table
+    let result_prefix_table = freq_table
         .iter()
         .zip(prefix_table2.iter())
         .map(|(freq, prefix)| {
-            let symbol_char = if freq.0 < 256 {
-                match freq.0 as u8 {
-                    ch @ 0x20..=0x7e => {
-                        format!("\"{}\"", ch as char)
-                    }
-                    ch => {
-                        format!("\"\\x{:02x}\"", ch)
-                    }
-                }
-            } else {
-                "(null)".to_owned()
-            };
+            let symbol_char = stringify_char(freq.0 as u8);
             PrefixTableEntry {
                 symbol: freq.0 as usize,
                 symbol_char,
@@ -78,42 +75,102 @@ pub fn encode(input: &[u8]) -> String {
         .collect::<Vec<_>>();
 
     let mut zip = BitStreamWriter::new();
-    zip.push(&AnyBitValue::new(BitSize::Bit1, 0b1)); // BFINAL: 1 true
-    zip.push(&AnyBitValue::new(BitSize::Bit2, 0b10)); // BTYPE: 10 dynamic huffman
-    zip.push(&AnyBitValue::new(BitSize::Bit5, 0)); // HLIT: 0
-    zip.push(&AnyBitValue::new(BitSize::Bit5, 0)); // HDIST: 0
-    zip.push(&AnyBitValue::new(BitSize::Bit4, meta.hclen as u32)); // HCLEN
-    for item in meta.prefix_table.iter() {
-        zip.push(item);
-    }
-    for item in meta.payload.iter() {
-        zip.push(item);
-    }
-    for code in encoded_codes.iter() {
-        zip.push(&code.reversed());
+    {
+        let zlib_meta = CanonicalPrefixCoder::encode_single_prefix_table(
+            &prefix_table,
+            PermutationOrder::Deflate,
+        )
+        .unwrap();
+        zip.push(AnyBitValue::with_bool(true)); // BFINAL: true
+        zip.push(AnyBitValue::new(BitSize::Bit2, 0b10)); // BTYPE: 10 dynamic huffman
+        zip.push(AnyBitValue::new(BitSize::Bit5, 0)); // HLIT: 0
+        zip.push(AnyBitValue::new(BitSize::Bit5, 0)); // HDIST: 0
+        zip.push(AnyBitValue::with_nibble(zlib_meta.hclen)); // HCLEN
+        zip.push_slice(&zlib_meta.prefix_table);
+        zip.push_slice(&zlib_meta.payload);
+        for code in encoded_codes.iter() {
+            zip.push(code.reversed());
+        }
     }
     let encoded_zlib = zip.into_bytes();
 
-    let encoded = Encoded {
-        input_value: input.to_vec(),
+    let mut webp = BitStreamWriter::new();
+    match prefix_table2.len() {
+        1 => {
+            webp.push(AnyBitValue::with_bool(true)); // simple code
+            webp.push(AnyBitValue::with_bool(false)); // num_symbols = 1
+            let symbol = prefix_table2[0].0 as u8;
+            if symbol < 2 {
+                webp.push(AnyBitValue::with_bool(false)); // is_first_8bit = false
+                webp.push(AnyBitValue::with_bool(symbol != 0));
+            } else {
+                webp.push(AnyBitValue::with_bool(true)); // is_first_8bit = true
+                webp.push(AnyBitValue::with_byte(symbol));
+            }
+        }
+        2 => {
+            webp.push(AnyBitValue::with_bool(true)); // simple code
+            webp.push(AnyBitValue::with_bool(true)); // num_symbols = 2
+            let first = prefix_table2[0].0 as u8;
+            if first < 2 {
+                webp.push(AnyBitValue::with_bool(false)); // is_first_8bit = false
+                webp.push(AnyBitValue::with_bool(first != 0));
+            } else {
+                webp.push(AnyBitValue::with_bool(true)); // is_first_8bit = true
+                webp.push(AnyBitValue::with_byte(first));
+            }
+            webp.push(AnyBitValue::with_byte(prefix_table2[1].0 as u8));
+            for code in encoded_codes.iter() {
+                webp.push(code.reversed());
+            }
+        }
+        _ => {
+            let webp_meta = CanonicalPrefixCoder::encode_single_prefix_table(
+                &prefix_table,
+                PermutationOrder::WebP,
+            )
+            .unwrap();
+
+            webp.push(AnyBitValue::with_bool(false)); // normal code
+            webp.push(AnyBitValue::with_nibble(webp_meta.hclen));
+            webp.push_slice(&webp_meta.prefix_table);
+            webp.push(AnyBitValue::with_bool(false)); // max_symbol = default
+            webp.push_slice(&webp_meta.payload);
+            for code in encoded_codes.iter() {
+                webp.push(code.reversed());
+            }
+        }
+    }
+    let encoded_webp = webp.into_bytes();
+
+    let huffman_tree = if let Some(tree) = result_tree.get(0) {
+        let mut huffman_tree: Vec<String> = Vec::new();
+        render_huffman_tree(&mut huffman_tree, tree, 0);
+        huffman_tree.join("\n")
+    } else {
+        "".to_owned()
+    };
+
+    let encoded = EncodeChcResult {
         input_len: input.len(),
         input_bits: input.len() * 8,
         input_entropy: entropy_of_bytes(input),
         output_bits,
-        output_rate: output_bits as f64 / (input.len() * 8) as f64 * 100.0,
         output_entropy: entropy_of_bytes(&encoded_zlib),
-        prefix_table,
+        webp_entropy: entropy_of_bytes(&encoded_webp),
+        prefix_table: result_prefix_table,
         encoded_str,
         encoded_zlib,
+        encoded_webp,
+        huffman_tree,
     };
 
     let result = serde_json::to_string(&encoded).unwrap();
-
-    result
+    Ok(result)
 }
 
 #[wasm_bindgen]
-pub fn decode(input: &[u8], len: usize) -> Result<Vec<u8>, DecodeError> {
+pub fn decode_chc(input: &[u8], len: usize) -> Result<Vec<u8>, DecodeError> {
     let mut reader = BitStreamReader::new(input);
 
     let bfinal = reader
@@ -134,8 +191,13 @@ pub fn decode(input: &[u8], len: usize) -> Result<Vec<u8>, DecodeError> {
     }
 
     let mut prefixes = Vec::new();
-    CanonicalPrefixCoder::decode_prefix_tables(&mut reader, &mut prefixes, &[HLIT])
-        .map_err(|_| DecodeError::InvalidData)?;
+    CanonicalPrefixCoder::decode_prefix_tables(
+        &mut reader,
+        &mut prefixes,
+        &[HLIT],
+        PermutationOrder::Deflate,
+    )
+    .map_err(|_| DecodeError::InvalidData)?;
     let prefixes = prefixes
         .iter()
         .enumerate()
@@ -154,18 +216,27 @@ pub fn decode(input: &[u8], len: usize) -> Result<Vec<u8>, DecodeError> {
     Ok(output)
 }
 
+fn stringify_char(data: u8) -> String {
+    if data < 0x20 || data > 0x7e {
+        format!("\"\\x{:02x}\"", data)
+    } else {
+        format!("\"{}\"", data as char)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Encoded {
-    pub input_value: Vec<u8>,
+pub struct EncodeChcResult {
     pub input_len: usize,
     pub input_bits: usize,
     pub input_entropy: f64,
     pub output_bits: usize,
-    pub output_rate: f64,
     pub output_entropy: f64,
     pub prefix_table: Vec<PrefixTableEntry>,
     pub encoded_str: Vec<String>,
     pub encoded_zlib: Vec<u8>,
+    pub encoded_webp: Vec<u8>,
+    pub webp_entropy: f64,
+    pub huffman_tree: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -207,4 +278,39 @@ fn entropy_of_bytes(input: &[u8]) -> f64 {
         .filter_map(|(i, &v)| (v > 0).then(|| (i as u8, v)))
         .collect::<Vec<_>>();
     _entropy_of(&freq_table)
+}
+
+fn render_huffman_tree(output: &mut Vec<String>, item: &HuffmanTreeNode<u8>, nest: usize) {
+    let current_indent = " ".repeat(nest * 2);
+    if let Some(symbol) = item.symbol() {
+        output.push(format!(
+            "{current_indent}{}: {},",
+            item.freq(),
+            stringify_char(symbol),
+        ));
+    } else {
+        output.push(format!("{current_indent}{}: {{", item.freq()));
+        if let Some(left) = item.left() {
+            render_huffman_tree(output, left, nest + 1);
+        }
+        if let Some(right) = item.right() {
+            render_huffman_tree(output, right, nest + 1);
+        }
+        output.push(format!("{current_indent}}},"));
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum EncodeError {
+    InvalidInput,
+}
+
+impl Display for EncodeError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            EncodeError::InvalidInput => {
+                write!(f, "Invalid input (e.g. not enough Bit Length)")
+            }
+        }
+    }
 }
