@@ -224,7 +224,7 @@ impl CanonicalPrefixCoder {
 
     pub fn encode_single_prefix_table(
         input: &[Option<AnyBitValue>],
-        permutation_order: PermutationOrder,
+        permutation_flavor: PermutationFlavor,
     ) -> Result<MetaPrefixTable, Infallible> {
         let table0 = input
             .iter()
@@ -233,16 +233,16 @@ impl CanonicalPrefixCoder {
                 None => 0,
             })
             .collect::<Vec<_>>();
-        Self::encode_prefix_tables(&[&table0], permutation_order)
+        Self::encode_prefix_tables(&[&table0], permutation_flavor)
     }
 
     pub fn encode_prefix_tables(
         tables: &[&[u8]],
-        permutation_order: PermutationOrder,
+        permutation_flavor: PermutationFlavor,
     ) -> Result<MetaPrefixTable, Infallible> {
-        let permutation_order = match permutation_order {
-            PermutationOrder::Deflate => Self::PREFIX_PERMUTATION_ORDER_DEFLATE,
-            PermutationOrder::WebP => Self::PREFIX_PERMUTATION_ORDER_WEBP,
+        let permutation_order = match permutation_flavor {
+            PermutationFlavor::Deflate => Self::PREFIX_PERMUTATION_ORDER_DEFLATE,
+            PermutationFlavor::WebP => Self::PREFIX_PERMUTATION_ORDER_WEBP,
         };
 
         let hlits = tables.iter().map(|v| v.len()).collect::<Vec<_>>();
@@ -309,11 +309,11 @@ impl CanonicalPrefixCoder {
     pub fn decode_prefix_table_from_bytes(
         bytes: &[u8],
         output_size: usize,
-        permutation_order: PermutationOrder,
+        permutation_flavor: PermutationFlavor,
     ) -> Result<Vec<u8>, DecodeError> {
         let mut reader = BitStreamReader::new(bytes);
         let mut output = Vec::<u8>::new();
-        Self::decode_prefix_tables(&mut reader, &mut output, &[output_size], permutation_order)?;
+        Self::decode_prefix_tables(&mut reader, &mut output, &[output_size], permutation_flavor)?;
         Ok(output)
     }
 
@@ -321,11 +321,11 @@ impl CanonicalPrefixCoder {
         reader: &mut BitStreamReader<'a>,
         output: &mut Vec<u8>,
         output_sizes: &[usize],
-        permutation_order: PermutationOrder,
+        permutation_flavor: PermutationFlavor,
     ) -> Result<(), DecodeError> {
-        let permutation_order = match permutation_order {
-            PermutationOrder::Deflate => Self::PREFIX_PERMUTATION_ORDER_DEFLATE,
-            PermutationOrder::WebP => Self::PREFIX_PERMUTATION_ORDER_WEBP,
+        let permutation_order = match permutation_flavor {
+            PermutationFlavor::Deflate => Self::PREFIX_PERMUTATION_ORDER_DEFLATE,
+            PermutationFlavor::WebP => Self::PREFIX_PERMUTATION_ORDER_WEBP,
         };
         output.reserve(output_sizes.iter().fold(0, |a, v| a + v));
 
@@ -506,75 +506,75 @@ impl CanonicalPrefixDecoder {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub enum PermutationOrder {
+pub enum PermutationFlavor {
     #[default]
     Deflate,
     WebP,
 }
 
-pub struct HuffmanTreeNode<K> {
-    symbol: K,
-    freq: usize,
-    left: Option<Box<HuffmanTreeNode<K>>>,
-    right: Option<Box<HuffmanTreeNode<K>>>,
+pub enum HuffmanTreeNode<K> {
+    Leaf(K, usize),
+    Pair(usize, Box<HuffmanTreeNode<K>>, Box<HuffmanTreeNode<K>>),
 }
 
-impl<K: Copy> HuffmanTreeNode<K> {
+impl<K> HuffmanTreeNode<K> {
     #[inline]
     pub fn make_leaf(symbol: K, freq: usize) -> Self {
-        Self {
-            symbol,
-            freq,
-            left: None,
-            right: None,
-        }
+        Self::Leaf(symbol, freq)
     }
 
     #[inline]
     pub fn make_pair(left: Self, right: Self) -> Self {
-        let freq = left.freq + right.freq;
-        Self {
-            symbol: left.symbol,
-            freq,
-            left: Some(Box::new(left)),
-            right: Some(Box::new(right)),
-        }
+        let freq = left.freq() + right.freq();
+        Self::Pair(freq, Box::new(left), Box::new(right))
     }
 
     #[inline]
     pub fn is_leaf(&self) -> bool {
-        self.left.is_none() && self.right.is_none()
+        matches!(self, Self::Leaf(_, _))
     }
 
     #[inline]
     pub const fn freq(&self) -> usize {
-        self.freq
+        match self {
+            Self::Leaf(_, freq) => *freq,
+            Self::Pair(freq, _, _) => *freq,
+        }
     }
 
     #[inline]
-    pub fn symbol(&self) -> Option<K> {
-        self.is_leaf().then(|| self.symbol)
+    pub fn symbol(&self) -> Option<&K> {
+        match self {
+            Self::Leaf(symbol, _) => Some(symbol),
+            Self::Pair(_, _, _) => None,
+        }
     }
 
     #[inline]
     pub fn left<'a>(&'a self) -> Option<&'a Self> {
-        self.left.as_ref().map(|v| v.as_ref())
+        match self {
+            Self::Leaf(_, _) => None,
+            Self::Pair(_, left, _) => Some(left.as_ref()),
+        }
     }
 
     #[inline]
     pub fn right<'a>(&'a self) -> Option<&'a Self> {
-        self.right.as_ref().map(|v| v.as_ref())
+        match self {
+            Self::Leaf(_, _) => None,
+            Self::Pair(_, _, right) => Some(right.as_ref()),
+        }
     }
 
     fn count_prefix_size(&self, map: &mut BTreeMap<u8, usize>, chc_bit: u8) {
-        if let Some(left) = self.left.as_ref() {
-            left.count_prefix_size(map, chc_bit + 1);
-        }
-        if let Some(right) = self.right.as_ref() {
-            right.count_prefix_size(map, chc_bit + 1);
-        }
-        if self.is_leaf() {
-            map.entry(chc_bit).and_modify(|v| *v += 1).or_insert(1);
+        match self {
+            Self::Leaf(_, _) => {
+                map.entry(chc_bit).and_modify(|v| *v += 1).or_insert(1);
+            }
+            Self::Pair(_, left, right) => {
+                left.count_prefix_size(map, chc_bit + 1);
+                right.count_prefix_size(map, chc_bit + 1);
+            }
         }
     }
 
@@ -582,11 +582,12 @@ impl<K: Copy> HuffmanTreeNode<K> {
     where
         K: Ord,
     {
-        match other.freq.cmp(&self.freq) {
-            cmp::Ordering::Equal => match (self.is_leaf(), other.is_leaf()) {
-                (true, true) | (false, false) => other.symbol.cmp(&self.symbol),
-                (true, false) => cmp::Ordering::Greater,
-                (false, true) => cmp::Ordering::Less,
+        match other.freq().cmp(&self.freq()) {
+            cmp::Ordering::Equal => match (self.symbol(), other.symbol()) {
+                (Some(lhs), Some(rhs)) => rhs.cmp(&lhs),
+                (Some(_), None) => cmp::Ordering::Greater,
+                (None, Some(_)) => cmp::Ordering::Less,
+                (None, None) => cmp::Ordering::Equal,
             },
             ord => ord,
         }
@@ -595,12 +596,12 @@ impl<K: Copy> HuffmanTreeNode<K> {
 
 impl<K: fmt::Debug> fmt::Debug for HuffmanTreeNode<K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("HuffmanTreeNode")
-            .field("symbol", &self.symbol)
-            .field("freq", &self.freq)
-            .field("left", &self.left)
-            .field("right", &self.right)
-            .finish()
+        match self {
+            Self::Leaf(symbol, freq) => write!(f, "Leaf({:?}, {})", symbol, freq),
+            Self::Pair(freq, left, right) => {
+                write!(f, "Pair({}, {:?}, {:?})", freq, left, right)
+            }
+        }
     }
 }
 

@@ -74,8 +74,6 @@ class App {
         });
 
         ($('body') as HTMLBodyElement).style.display = 'block';
-
-        // new MainMenu().show();
     }
 
     private dimCount = 0;
@@ -154,8 +152,7 @@ class App {
             detailsTag.open = false;
 
             const summaryTag = document.createElement('summary');
-            const entropy = json.input_entropy.toLocaleString('en', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-            const message = `# length ${json.input_len}, entropy ${entropy}`;
+            const message = `# length ${json.input_len}, entropy ${formatNumber(json.input_entropy)}`;
             summaryTag.appendChild(document.createTextNode(message));
             detailsTag.appendChild(summaryTag);
 
@@ -176,12 +173,15 @@ class App {
             detailsTag.open = true;
 
             const summaryTag = document.createElement('summary');
-            const rate = (json.output_bits / json.input_bits * 100.0).toLocaleString('en', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-            const ideal_bits = Math.ceil(json.input_len * json.input_entropy);
-            const ideal_rate = (json.output_bits / ideal_bits * 100.0).toLocaleString('en', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-            let message = `# ${json.output_bits} bits <= ${json.input_bits} bits (${rate}%)`;
+            let message = `# ${json.output_bits} bits <= ${json.input_bits} bits (${formatNumber(json.output_bits / json.input_bits * 100.0)}%)`;
+
+            const ideal_bits = json.input_len * json.input_entropy;
             if (ideal_bits > 0) {
-                message += `, ideal ${ideal_bits} bits (${ideal_rate}%)`;
+                if (json.output_bits > Math.ceil(ideal_bits)) {
+                    message += `, ideal ${formatNumber(ideal_bits, 1)} bits (${formatNumber(json.output_bits / ideal_bits * 100.0)}%)`;
+                } else {
+                    message += `, ideal ${formatNumber(ideal_bits, 1)} bits`;
+                }
             }
             summaryTag.appendChild(document.createTextNode(message));
             detailsTag.appendChild(summaryTag);
@@ -196,15 +196,15 @@ class App {
 
         {
             const h3tag = document.createElement('h3');
-            h3tag.appendChild(document.createTextNode("Output like zlib:"));
+            h3tag.appendChild(document.createTextNode("Output like deflate:"));
             resultArea.appendChild(h3tag);
 
             const detailsTag = document.createElement('details');
             detailsTag.open = false;
 
             const summaryTag = document.createElement('summary');
-            const actualRate = (json.encoded_zlib.length / json.input_len * 100.0).toLocaleString('en', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-            const entropy = json.output_entropy.toLocaleString('en', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+            const actualRate = formatNumber(json.encoded_zlib.length / json.input_len * 100.0);
+            const entropy = formatNumber(json.output_entropy);
             const message = `# length ${json.encoded_zlib.length} (${actualRate}%), entropy ${entropy}`;
             summaryTag.appendChild(document.createTextNode(message));
             detailsTag.appendChild(summaryTag);
@@ -229,8 +229,8 @@ class App {
             detailsTag.open = false;
 
             const summaryTag = document.createElement('summary');
-            const actualRate = (json.encoded_webp.length / json.input_len * 100.0).toLocaleString('en', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-            const entropy = json.webp_entropy.toLocaleString('en', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+            const actualRate = formatNumber(json.encoded_webp.length / json.input_len * 100.0);
+            const entropy = formatNumber(json.webp_entropy);
             const message = `# length ${json.encoded_webp.length} (${actualRate}%), entropy ${entropy}`;
             summaryTag.appendChild(document.createTextNode(message));
             detailsTag.appendChild(summaryTag);
@@ -308,9 +308,8 @@ class App {
                 td2Tag.appendChild(document.createTextNode(String(item.freq)));
                 trTag.appendChild(td2Tag);
 
-                const freqRate = item.freq_rate.toLocaleString('en', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
                 const td3Tag = document.createElement('td');
-                td3Tag.appendChild(document.createTextNode(freqRate));
+                td3Tag.appendChild(document.createTextNode(formatNumber(item.freq_rate)));
                 trTag.appendChild(td3Tag);
 
                 const td4Tag = document.createElement('td');
@@ -329,14 +328,17 @@ class App {
         }
 
         if (json.huffman_tree.length > 0) {
-            const h3tag = document.createElement('h3');
-            h3tag.appendChild(document.createTextNode("Reference Huffman Tree:"));
-            resultArea.appendChild(h3tag);
+            const h3Tag = document.createElement('h3');
+            h3Tag.appendChild(document.createTextNode("Huffman Tree for reference:"));
+            resultArea.appendChild(h3Tag);
 
             const preTag = document.createElement('pre');
-            // preTag.className = 'code';
             preTag.appendChild(document.createTextNode(json.huffman_tree));
             resultArea.appendChild(preTag);
+
+            const divTag = document.createElement('div');
+            divTag.appendChild(document.createTextNode("(The actual code assignment may differ)"));
+            resultArea.appendChild(divTag);
         }
 
     }
@@ -429,6 +431,9 @@ const arrayToHex = (bytes: Uint8Array, delimiter: string = ' ') => {
     return encoded.join(delimiter);
 }
 
+const formatNumber = (num: number, fracDigits: number = 3): string => {
+    return num.toLocaleString('en', { minimumFractionDigits: fracDigits, maximumFractionDigits: fracDigits });
+}
 
 const roundToEven = (v: number): number => {
     if (!Number.isFinite(v)) {

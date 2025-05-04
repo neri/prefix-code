@@ -5,7 +5,7 @@ extern crate alloc;
 use core::fmt::Display;
 use entropy::{
     bits::{AnyBitValue, BitSize, BitStreamReader, BitStreamWriter},
-    prefix::{CanonicalPrefixCoder, CanonicalPrefixDecoder, HuffmanTreeNode, PermutationOrder},
+    prefix::{CanonicalPrefixCoder, CanonicalPrefixDecoder, HuffmanTreeNode, PermutationFlavor},
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -78,7 +78,7 @@ pub fn _encode_chc(input: &[u8], max_size: u8) -> Result<String, EncodeError> {
     {
         let zlib_meta = CanonicalPrefixCoder::encode_single_prefix_table(
             &prefix_table,
-            PermutationOrder::Deflate,
+            PermutationFlavor::Deflate,
         )
         .unwrap();
         zip.push(AnyBitValue::with_bool(true)); // BFINAL: true
@@ -120,6 +120,7 @@ pub fn _encode_chc(input: &[u8], max_size: u8) -> Result<String, EncodeError> {
                 webp.push(AnyBitValue::with_byte(first));
             }
             webp.push(AnyBitValue::with_byte(prefix_table2[1].0 as u8));
+
             for code in encoded_codes.iter() {
                 webp.push(code.reversed());
             }
@@ -127,7 +128,7 @@ pub fn _encode_chc(input: &[u8], max_size: u8) -> Result<String, EncodeError> {
         _ => {
             let webp_meta = CanonicalPrefixCoder::encode_single_prefix_table(
                 &prefix_table,
-                PermutationOrder::WebP,
+                PermutationFlavor::WebP,
             )
             .unwrap();
 
@@ -136,6 +137,7 @@ pub fn _encode_chc(input: &[u8], max_size: u8) -> Result<String, EncodeError> {
             webp.push_slice(&webp_meta.prefix_table);
             webp.push(AnyBitValue::with_bool(false)); // max_symbol = default
             webp.push_slice(&webp_meta.payload);
+
             for code in encoded_codes.iter() {
                 webp.push(code.reversed());
             }
@@ -195,7 +197,7 @@ pub fn decode_chc(input: &[u8], len: usize) -> Result<Vec<u8>, DecodeError> {
         &mut reader,
         &mut prefixes,
         &[HLIT],
-        PermutationOrder::Deflate,
+        PermutationFlavor::Deflate,
     )
     .map_err(|_| DecodeError::InvalidData)?;
     let prefixes = prefixes
@@ -282,21 +284,20 @@ fn entropy_of_bytes(input: &[u8]) -> f64 {
 
 fn render_huffman_tree(output: &mut Vec<String>, item: &HuffmanTreeNode<u8>, nest: usize) {
     let current_indent = " ".repeat(nest * 2);
-    if let Some(symbol) = item.symbol() {
+    if let Some(&symbol) = item.symbol() {
         output.push(format!(
-            "{current_indent}{}: {},",
+            "{current_indent}{}: {}",
             item.freq(),
             stringify_char(symbol),
         ));
     } else {
-        output.push(format!("{current_indent}{}: {{", item.freq()));
+        output.push(format!("{current_indent}{}:", item.freq()));
         if let Some(left) = item.left() {
             render_huffman_tree(output, left, nest + 1);
         }
         if let Some(right) = item.right() {
             render_huffman_tree(output, right, nest + 1);
         }
-        output.push(format!("{current_indent}}},"));
     }
 }
 

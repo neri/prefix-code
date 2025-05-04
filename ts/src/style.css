@@ -24,10 +24,9 @@ html {
     font: 13px "ヒラギノ丸ゴ Pro", "ヒラギノ丸ゴ Pro W4", "HiraMaruPro-W4", "HiraKakuProN-W3", sans-serif;
 }
 
-/* body {
-    margin: 0;
-    padding: 0;
-} */
+#main {
+    margin-top: 48px;
+}
 
 header {
     -webkit-app-region: drag;
@@ -190,11 +189,6 @@ tr:nth-child(odd) {
 tr:nth-child(even) {
     background-color: var(--gray100);
     color: var(--gray700);
-}
-
-#main {
-    margin-top: 48px;
-    transition: filter 0.125s ease-in-out;
 }
 
 .blur {
