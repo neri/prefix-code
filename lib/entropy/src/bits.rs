@@ -1,6 +1,8 @@
 //! Bit processing utilities
+use crate::nibble::Nibble;
 use alloc::vec::Vec;
 use core::fmt;
+use core::mem::transmute;
 use core::slice::Iter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -29,18 +31,12 @@ pub enum BitSize {
     Bit22,
     Bit23,
     Bit24,
-    Bit25,
-    Bit26,
-    Bit27,
-    Bit28,
-    Bit29,
-    Bit30,
-    Bit31,
-    Bit32,
 }
 
 impl BitSize {
     pub const BIT: Self = Self::Bit1;
+
+    pub const NIBBLE: Self = Self::Bit4;
 
     pub const BYTE: Self = Self::Bit8;
 
@@ -88,16 +84,13 @@ impl BitSize {
             22 => Some(Self::Bit22),
             23 => Some(Self::Bit23),
             24 => Some(Self::Bit24),
-            25 => Some(Self::Bit25),
-            26 => Some(Self::Bit26),
-            27 => Some(Self::Bit27),
-            28 => Some(Self::Bit28),
-            29 => Some(Self::Bit29),
-            30 => Some(Self::Bit30),
-            31 => Some(Self::Bit31),
-            32 => Some(Self::Bit32),
             _ => None,
         }
+    }
+
+    #[inline]
+    pub const unsafe fn new_unchecked(value: u8) -> Self {
+        unsafe { transmute(value) }
     }
 }
 
@@ -139,17 +132,14 @@ pub fn nearest_power_of_two(value: usize) -> usize {
     if value >= threshold { next } else { next >> 1 }
 }
 
-#[repr(C, packed)]
+// #[repr(C, packed)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AnyBitValue {
-    pub value: u32,
-    pub size: BitSize,
-}
+pub struct AnyBitValue(u32);
 
 impl AnyBitValue {
     #[inline]
     pub fn new(size: BitSize, value: u32) -> Self {
-        Self { size, value }
+        Self((value & 0x00ff_ffff) | (size.as_u32() << 24))
     }
 
     #[inline]
@@ -158,8 +148,8 @@ impl AnyBitValue {
     }
 
     #[inline]
-    pub fn with_nibble(value: u8) -> Self {
-        Self::new(BitSize::Bit4, value as u32 & 0x0F)
+    pub fn with_nibble(value: Nibble) -> Self {
+        Self::new(BitSize::NIBBLE, value.as_u32())
     }
 
     #[inline]
@@ -168,26 +158,13 @@ impl AnyBitValue {
     }
 
     #[inline]
-    pub fn with_word(value: u32) -> Self {
-        Self::new(BitSize::Bit32, value)
-    }
-
-    #[inline]
     pub fn size(&self) -> BitSize {
-        self.size
+        unsafe { BitSize::new_unchecked((self.0 >> 24) as u8) }
     }
 
     #[inline]
     pub fn value(&self) -> u32 {
-        self.value
-    }
-
-    #[inline]
-    pub fn total_len<'a, T>(iter: T) -> usize
-    where
-        T: Iterator<Item = &'a Option<AnyBitValue>>,
-    {
-        (Self::total_bit_count(iter) + 7) / 8
+        self.0 & 0xff_ff_ff
     }
 
     #[inline]
@@ -211,21 +188,32 @@ impl AnyBitValue {
     }
 
     pub fn reversed(&self) -> Self {
+        let size = self.size();
         let mut value = 0;
         let mut input = self.value();
-        for _ in 0..self.size().as_usize() {
+        for _ in 0..size.as_usize() {
             value = (value << 1) | (input & 1);
             input >>= 1;
         }
-        Self {
-            size: self.size,
-            value,
-        }
+        Self::new(size, value)
     }
+
+    // #[inline]
+    // pub fn set_value(&mut self, value: u32) {
+    //     self.0 = (self.0 & 0xff_00_00_00) | (value & 0xff_ff_ff);
+    // }
 
     #[inline]
     pub fn reverse(&mut self) {
-        self.value = self.reversed().value();
+        self.0 = self.reversed().0;
+    }
+
+    #[inline]
+    pub fn total_len<'a, T>(iter: T) -> usize
+    where
+        T: Iterator<Item = &'a Option<AnyBitValue>>,
+    {
+        (Self::total_bit_count(iter) + 7) / 8
     }
 
     #[inline]
@@ -242,15 +230,16 @@ impl AnyBitValue {
 
 impl fmt::Display for AnyBitValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let size = self.size().as_usize();
         if let Some(width) = f.width() {
-            if width > self.size.as_usize() {
-                for _ in 0..width - self.size.as_usize() {
+            if width > size {
+                for _ in 0..width - size {
                     write!(f, " ")?;
                 }
             }
         }
-        for i in (0..self.size.as_usize()).rev() {
-            let bit = self.value.wrapping_shr(i as u32) & 1;
+        for i in (0..size).rev() {
+            let bit = self.value().wrapping_shr(i as u32) & 1;
             write!(f, "{}", bit)?;
         }
         Ok(())
@@ -289,6 +278,11 @@ impl BitStreamWriter {
     }
 
     #[inline]
+    pub fn push_nibble(&mut self, value: Nibble) {
+        self.push(AnyBitValue::with_nibble(value))
+    }
+
+    #[inline]
     pub fn push_slice(&mut self, value: &[AnyBitValue]) {
         for &item in value.iter() {
             self.push(item);
@@ -297,9 +291,9 @@ impl BitStreamWriter {
 
     pub fn push(&mut self, value: AnyBitValue) {
         let lowest_bits = 8 - self.bit_position;
-        let lowest_bit_mask = ((1u32 << value.size.as_u8().min(lowest_bits)) - 1) as u8;
-        let mut acc = self.acc | ((value.value as u8 & lowest_bit_mask) << self.bit_position);
-        let mut remain_bits = value.size.as_u8();
+        let lowest_bit_mask = ((1u32 << value.size().as_u8().min(lowest_bits)) - 1) as u8;
+        let mut acc = self.acc | ((value.value() as u8 & lowest_bit_mask) << self.bit_position);
+        let mut remain_bits = value.size().as_u8();
         if self.bit_position + remain_bits >= 8 {
             self.buf.push(acc);
             acc = 0;
@@ -307,7 +301,7 @@ impl BitStreamWriter {
             self.bit_position = 0;
 
             if remain_bits > 0 {
-                let value_mask = (1u32 << value.size.as_usize()) - 1;
+                let value_mask = (1u32 << value.size().as_usize()) - 1;
                 let mut acc32 = (value.value() & value_mask) >> lowest_bits;
                 while remain_bits >= 8 {
                     self.buf.push(acc32 as u8);
@@ -372,8 +366,9 @@ impl BitStreamReader<'_> {
     }
 
     #[inline]
-    pub fn read_nibble(&mut self) -> Option<u8> {
-        self.read(BitSize::Bit4).map(|v| v as u8)
+    pub fn read_nibble(&mut self) -> Option<Nibble> {
+        self.read(BitSize::NIBBLE)
+            .and_then(|v| Nibble::new(v as u8))
     }
 
     pub fn read(&mut self, bits: BitSize) -> Option<u32> {
@@ -477,8 +472,9 @@ impl ReverseBitStreamReader<'_> {
     }
 
     #[inline]
-    pub fn read_nibble(&mut self) -> Option<u8> {
-        self.read(BitSize::Bit4).map(|v| v as u8)
+    pub fn read_nibble(&mut self) -> Option<Nibble> {
+        self.read(BitSize::NIBBLE)
+            .and_then(|v| Nibble::new(v as u8))
     }
 
     pub fn read(&mut self, bits: BitSize) -> Option<u32> {
@@ -606,26 +602,40 @@ mod tests {
     #[test]
     fn reverse() {
         for (size, lhs, rhs) in [
-            (32, u32::MAX, u32::MAX),
-            (32, 0, 0),
-            (32, 0xFFFF_0000, 0x0000_FFFF),
-            (32, 0x0000_FFFF, 0xFFFF_0000),
-            (32, 0xFF00_FF00, 0x00FF_00FF),
-            (32, 0x00FF_00FF, 0xFF00_FF00),
-            (32, 0xF0F0_F0F0, 0x0F0F_0F0F),
-            (32, 0x0F0F_0F0F, 0xF0F0_F0F0),
-            (32, 0xCCCC_CCCC, 0x3333_3333),
-            (32, 0x3333_3333, 0xCCCC_CCCC),
-            (32, 0xAAAA_AAAA, 0x5555_5555),
-            (32, 0x5555_5555, 0xAAAA_AAAA),
-            (8, 0x55, 0xAA),
-            (8, 0xAA, 0x55),
-            (8, 0xC0, 0x03),
-            (8, 0x03, 0xC0),
-            (8, 0xF0, 0x0F),
-            (8, 0x0F, 0xF0),
-            (16, 0x1234, 0x2C48),
-            (32, 0x1234_5678, 0x1E6A_2C48),
+            (8, 0x00, 0x00),
+            (8, 0x03, 0xc0),
+            (8, 0x55, 0xaa),
+            (8, 0xc0, 0x03),
+            (8, 0xf0, 0x0f),
+            (8, 0xff, 0xff),
+            (16, 0x0000, 0x0000),
+            (16, 0x00ff, 0xff00),
+            (16, 0x0f0f, 0xf0f0),
+            (16, 0x1234, 0x2c48),
+            (16, 0x3333, 0xcccc),
+            (16, 0x5555, 0xaaaa),
+            (16, 0xffff, 0xffff),
+            (24, 0x000000, 0x000000),
+            (24, 0x123456, 0x6a2c48),
+            (24, 0x555555, 0xaaaaaa),
+            (24, 0xcccccc, 0x333333),
+            (24, 0xff0000, 0x0000ff),
+            (24, 0xfff000, 0x000fff),
+            (24, 0xffff00, 0x00ffff),
+            (24, 0xffffff, 0xffffff),
+            // (32, 0x1234_5678, 0x1E6A_2C48),
+            // (32, u32::MAX, u32::MAX),
+            // (32, 0, 0),
+            // (32, 0xFFFF_0000, 0x0000_FFFF),
+            // (32, 0x0000_FFFF, 0xFFFF_0000),
+            // (32, 0xFF00_FF00, 0x00FF_00FF),
+            // (32, 0x00FF_00FF, 0xFF00_FF00),
+            // (32, 0xF0F0_F0F0, 0x0F0F_0F0F),
+            // (32, 0x0F0F_0F0F, 0xF0F0_F0F0),
+            // (32, 0xCCCC_CCCC, 0x3333_3333),
+            // (32, 0x3333_3333, 0xCCCC_CCCC),
+            // (32, 0xAAAA_AAAA, 0x5555_5555),
+            // (32, 0x5555_5555, 0xAAAA_AAAA),
         ] {
             let size = BitSize::new(size).unwrap();
             let lhs = AnyBitValue::new(size, lhs);

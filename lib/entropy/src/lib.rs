@@ -9,7 +9,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 pub mod bits;
-// pub mod fse;
+pub mod nibble;
 pub mod prefix;
 pub mod stats;
 

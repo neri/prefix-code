@@ -1,7 +1,10 @@
 //! Canonical Prefix Coder
+//!
+//! https://en.wikipedia.org/wiki/Canonical_Huffman_code
 
 use crate::DecodeError;
 use crate::bits::{AnyBitValue, BitSize, BitStreamReader};
+use crate::nibble::Nibble;
 use crate::stats::*;
 use crate::*;
 use core::convert::Infallible;
@@ -17,40 +20,29 @@ impl CanonicalPrefixCoder {
     /// Repeat 0 `11 + readbits(7)` times
     pub const REP11Z7: u8 = 18;
 
-    pub const PREFIX_PERMUTATION_ORDER_DEFLATE: &[u8; 19] = &[
-        16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
-    ];
-
-    pub const PREFIX_PERMUTATION_ORDER_WEBP: &[u8; 19] = &[
-        17, 18, 0, 1, 2, 3, 4, 5, 16, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-    ];
-
-    pub fn generate_prefix_table_with<K>(
-        max_size: BitSize,
-        mut iter: impl Iterator<Item = K>,
-    ) -> Vec<Option<AnyBitValue>>
-    where
-        K: Copy + Ord + Into<usize>,
-        // K: fmt::Debug + fmt::Display + fmt::LowerHex,
-    {
-        let mut freq_table = BTreeMap::new();
-        while let Some(key) = iter.next() {
-            freq_table.count_freq(key);
-        }
-        let freq_table = freq_table.into_freq_table(true);
-        let prefix_table = CanonicalPrefixCoder::generate_prefix_table(&freq_table, max_size, None);
+    pub fn make_prefix_table(freq_table: &[usize], max_len: BitSize) -> Vec<Option<AnyBitValue>> {
+        let mut freq_table = freq_table
+            .iter()
+            .enumerate()
+            .filter_map(|(index, &v)| (v > 0).then(|| (index, v)))
+            .collect::<Vec<_>>();
+        freq_table.sort_by(|a, b| match b.1.cmp(&a.1) {
+            cmp::Ordering::Equal => a.0.cmp(&b.0),
+            ord => ord,
+        });
+        let prefix_table = CanonicalPrefixCoder::generate_prefix_table(&freq_table, max_len, None);
         let max_symbol = prefix_table.iter().fold(0usize, |a, v| a.max((v.0).into()));
         let mut prefix_map = Vec::new();
         prefix_map.resize(1 + max_symbol, None);
         for item in prefix_table.iter() {
-            prefix_map[(item.0).into()] = Some(item.1);
+            prefix_map[item.0] = Some(item.1);
         }
         prefix_map
     }
 
     pub fn generate_prefix_table<K>(
         freq_table: &[(K, usize)],
-        max_size: BitSize,
+        max_len: BitSize,
         result_tree: Option<&mut Vec<HuffmanTreeNode<K>>>,
     ) -> Vec<(K, AnyBitValue)>
     where
@@ -99,20 +91,20 @@ impl CanonicalPrefixCoder {
             drop(tree);
         }
 
-        Self::_adjust_prefix_lengths(&mut prefix_lengths, max_size);
+        Self::_adjust_prefix_lengths(&mut prefix_lengths, max_len);
 
         let mut acc = 0;
         let mut last_bits = 0;
-        let mut prefix_codes = Vec::new();
-        for (size, len) in prefix_lengths.into_iter().enumerate() {
-            for _ in 0..len {
-                let mut adj = size;
+        let mut prefix_codes: Vec<AnyBitValue> = Vec::new();
+        for (bit_len, count) in prefix_lengths.into_iter().enumerate() {
+            for _ in 0..count {
+                let mut adj = bit_len;
                 while last_bits < adj {
                     acc <<= 1;
                     adj -= 1;
                 }
-                last_bits = size;
-                prefix_codes.push(AnyBitValue::new(BitSize::new(size as u8).unwrap(), acc));
+                last_bits = bit_len;
+                prefix_codes.push(AnyBitValue::new(BitSize::new(bit_len as u8).unwrap(), acc));
                 acc += 1;
             }
         }
@@ -133,31 +125,31 @@ impl CanonicalPrefixCoder {
         prefix_table
     }
 
-    fn _adjust_prefix_lengths(prefix_size_table: &mut [usize], max_size: BitSize) {
-        let max_size = max_size as usize;
-        if prefix_size_table.len() <= max_size {
+    fn _adjust_prefix_lengths(prefix_len_table: &mut [usize], max_len: BitSize) {
+        let max_len = max_len as usize;
+        if prefix_len_table.len() <= max_len {
             return;
         }
         let mut extra_bits = 0;
-        for item in prefix_size_table.iter_mut().skip(max_size) {
+        for item in prefix_len_table.iter_mut().skip(max_len) {
             extra_bits += *item;
             *item = 0;
         }
-        prefix_size_table[max_size] += extra_bits;
+        prefix_len_table[max_len] += extra_bits;
 
         let mut total = 0;
-        for i in (1..=max_size).rev() {
-            total += prefix_size_table[i] << (max_size - i);
+        for i in (1..=max_len).rev() {
+            total += prefix_len_table[i] << (max_len - i);
         }
 
-        let one = 1usize << max_size;
+        let one = 1usize << max_len;
         while total > one {
-            prefix_size_table[max_size] -= 1;
+            prefix_len_table[max_len] -= 1;
 
-            for i in (1..=max_size - 1).rev() {
-                if prefix_size_table[i] > 0 {
-                    prefix_size_table[i] -= 1;
-                    prefix_size_table[i + 1] += 2;
+            for i in (1..=max_len - 1).rev() {
+                if prefix_len_table[i] > 0 {
+                    prefix_len_table[i] -= 1;
+                    prefix_len_table[i + 1] += 2;
                     break;
                 }
             }
@@ -166,17 +158,14 @@ impl CanonicalPrefixCoder {
         }
     }
 
-    fn rle_match_len(value: u8, data: &[u8], cursor: usize, max_len: usize) -> usize {
-        unsafe {
-            let max_len = (data.len() - cursor).min(max_len);
-            let p = data.as_ptr().add(cursor);
-            for len in 0..max_len {
-                if p.add(len).read_volatile() != value {
-                    return len;
-                }
+    fn rle_match_len(prev_value: u8, data: &[u8], cursor: usize, max_len: usize) -> usize {
+        let max_len = (data.len() - cursor).min(max_len);
+        for len in 0..max_len {
+            if data[cursor + len] != prev_value {
+                return len;
             }
-            max_len
         }
+        max_len
     }
 
     fn rle_compress_prefix_table(input: &[u8]) -> Vec<AnyBitValue> {
@@ -240,10 +229,7 @@ impl CanonicalPrefixCoder {
         tables: &[&[u8]],
         permutation_flavor: PermutationFlavor,
     ) -> Result<MetaPrefixTable, Infallible> {
-        let permutation_order = match permutation_flavor {
-            PermutationFlavor::Deflate => Self::PREFIX_PERMUTATION_ORDER_DEFLATE,
-            PermutationFlavor::WebP => Self::PREFIX_PERMUTATION_ORDER_WEBP,
-        };
+        let permutation_order = permutation_flavor.permutation_order();
 
         let hlits = tables.iter().map(|v| v.len()).collect::<Vec<_>>();
 
@@ -255,7 +241,7 @@ impl CanonicalPrefixCoder {
         let mut freq_table = BTreeMap::new();
         for table in tables.iter() {
             for bits in table.iter() {
-                if bits.size == BitSize::OCTET {
+                if bits.size() == BitSize::OCTET {
                     freq_table.count_freq(bits.value())
                 }
             }
@@ -273,8 +259,8 @@ impl CanonicalPrefixCoder {
         let mut compressed_table = Vec::new();
         for table in tables.iter() {
             for &item in table.iter() {
-                if item.size == BitSize::OCTET {
-                    let prefix_code = prefix_map[item.value as usize].unwrap();
+                if item.size() == BitSize::OCTET {
+                    let prefix_code = prefix_map[item.value() as usize].unwrap();
                     compressed_table.push(prefix_code.reversed());
                 } else {
                     compressed_table.push(item);
@@ -287,7 +273,7 @@ impl CanonicalPrefixCoder {
         for (p, &q) in permutation_order.iter().enumerate() {
             if let Some(item) = prefix_map[q as usize] {
                 max_index = max_index.max(p);
-                prefix_sizes[p] = Some(item.size);
+                prefix_sizes[p] = Some(item.size());
             }
         }
         let mut prefix_table = Vec::new();
@@ -300,7 +286,7 @@ impl CanonicalPrefixCoder {
 
         Ok(MetaPrefixTable {
             hlits,
-            hclen: max_index as u8 - 3,
+            hclen: Nibble::new(max_index as u8 - 3).unwrap(),
             prefix_table,
             payload: compressed_table,
         })
@@ -323,10 +309,7 @@ impl CanonicalPrefixCoder {
         output_sizes: &[usize],
         permutation_flavor: PermutationFlavor,
     ) -> Result<(), DecodeError> {
-        let permutation_order = match permutation_flavor {
-            PermutationFlavor::Deflate => Self::PREFIX_PERMUTATION_ORDER_DEFLATE,
-            PermutationFlavor::WebP => Self::PREFIX_PERMUTATION_ORDER_WEBP,
-        };
+        let permutation_order = permutation_flavor.permutation_order();
         output.reserve(output_sizes.iter().fold(0, |a, v| a + v));
 
         let num_prefixes = 4 + reader.read_nibble().ok_or(DecodeError::InvalidData)? as usize;
@@ -384,7 +367,7 @@ impl CanonicalPrefixCoder {
 #[derive(Debug)]
 pub struct MetaPrefixTable {
     pub hlits: Vec<usize>,
-    pub hclen: u8,
+    pub hclen: Nibble,
     pub prefix_table: Vec<AnyBitValue>,
     pub payload: Vec<AnyBitValue>,
 }
@@ -414,17 +397,17 @@ impl CanonicalPrefixDecoder {
         let max_size = prefix_table
             .iter()
             .filter_map(|v| v.as_ref())
-            .fold(0, |a, v| a.max(v.size.as_u8()));
+            .fold(0, |a, v| a.max(v.size().as_u8()));
 
         let min_size = prefix_table
             .iter()
             .filter_map(|v| v.as_ref())
-            .fold(u8::MAX, |a, v| a.min(v.size.as_u8()));
+            .fold(u8::MAX, |a, v| a.min(v.size().as_u8()));
 
         let mut prefix_map = BTreeMap::new();
         for (index, item) in prefix_table.iter().enumerate() {
             if let Some(item) = item {
-                prefix_map.insert(Self::_key_value(item.size.as_u8(), item.value()), index);
+                prefix_map.insert(Self::_key_value(item.size().as_u8(), item.value()), index);
             }
         }
 
@@ -505,11 +488,31 @@ impl CanonicalPrefixDecoder {
     }
 }
 
+/// In deflate, Huffman tables are sorted in a specific order to keep their size small.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum PermutationFlavor {
+    /// 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
     #[default]
     Deflate,
+    /// 17, 18, 0, 1, 2, 3, 4, 5, 16, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
     WebP,
+}
+
+impl PermutationFlavor {
+    const ORDER_DEFLATE: &[u8; 19] = &[
+        16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
+    ];
+
+    const ORDER_WEBP: &[u8; 19] = &[
+        17, 18, 0, 1, 2, 3, 4, 5, 16, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+    ];
+
+    pub fn permutation_order(&self) -> &'static [u8; 19] {
+        match self {
+            Self::Deflate => Self::ORDER_DEFLATE,
+            Self::WebP => Self::ORDER_WEBP,
+        }
+    }
 }
 
 pub enum HuffmanTreeNode<K> {
@@ -698,11 +701,18 @@ impl SimplePrefixCoder {
             }
         }
 
-        Some(Self {
+        let encoded = Self {
             table,
             data,
             len: input.len(),
-        })
+        };
+
+        if false {
+            let decoded = encoded.decode();
+            assert_eq!(decoded, input);
+        }
+
+        Some(encoded)
     }
 
     pub fn decode(&self) -> Vec<u8> {
