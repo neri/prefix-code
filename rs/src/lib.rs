@@ -5,11 +5,13 @@ extern crate alloc;
 use core::fmt::Display;
 use entropy::{
     bits::{AnyBitValue, BitSize, BitStreamReader, BitStreamWriter},
-    nibble::Nibble,
     prefix::{CanonicalPrefixCoder, CanonicalPrefixDecoder, HuffmanTreeNode, PermutationFlavor},
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
+
+#[allow(unused)]
+use entropy::nibble::Nibble;
 
 const HLIT: usize = 257;
 
@@ -83,11 +85,11 @@ pub fn _encode_chc(input: &[u8], max_len: u8) -> Result<String, EncodeError> {
         )
         .unwrap();
 
-        let mut cmf_flg = 0x0800; // CM = 8, CINFO = 0, FDICT = 0, FLEVEL = 0
-        cmf_flg |= 31 - (cmf_flg % 31); // FCHECK
+        // let mut cmf_flg = 0x0800; // CM = 8, CINFO = 0, FDICT = 0, FLEVEL = 0
+        // cmf_flg |= 31 - (cmf_flg % 31); // FCHECK
+        // zip.push_byte((cmf_flg >> 8) as u8); // CMF
+        // zip.push_byte(cmf_flg as u8); // FLG
 
-        zip.push_byte((cmf_flg >> 8) as u8); // CMF
-        zip.push_byte(cmf_flg as u8); // FLG
         zip.push_bool(true); // BFINAL: true
         zip.push(AnyBitValue::new(BitSize::Bit2, 0b10)); // BTYPE: 10 dynamic huffman
         zip.push(AnyBitValue::new(BitSize::Bit5, 0)); // HLIT: 0
@@ -182,15 +184,23 @@ pub fn _encode_chc(input: &[u8], max_len: u8) -> Result<String, EncodeError> {
 pub fn decode_chc(input: &[u8], len: usize) -> Result<Vec<u8>, DecodeError> {
     let mut reader = BitStreamReader::new(input);
 
-    let cm = reader.read_nibble().ok_or(DecodeError::InvalidInput)?;
-    let cinfo = reader.read_nibble().ok_or(DecodeError::InvalidInput)?;
-    let fcheck = reader
-        .read(BitSize::Bit5)
-        .ok_or(DecodeError::InvalidInput)?;
-    let fdict = reader.read_bool().ok_or(DecodeError::InvalidInput)?;
-    let flevel = reader
-        .read(BitSize::Bit2)
-        .ok_or(DecodeError::InvalidInput)?;
+    // let cm = reader.read_nibble().ok_or(DecodeError::InvalidInput)?;
+    // let cinfo = reader.read_nibble().ok_or(DecodeError::InvalidInput)?;
+    // let fcheck = reader
+    //     .read(BitSize::Bit5)
+    //     .ok_or(DecodeError::InvalidInput)?;
+    // let fdict = reader.read_bool().ok_or(DecodeError::InvalidInput)?;
+    // let flevel = reader
+    //     .read(BitSize::Bit2)
+    //     .ok_or(DecodeError::InvalidInput)?;
+    // let cmf_flg = ((cinfo as u16) << 12)
+    //     | ((cm as u16) << 8)
+    //     | ((flevel as u16) << 6)
+    //     | ((fdict as u16) << 5)
+    //     | (fcheck as u16);
+    // if cm != Nibble::V8 || cinfo >= Nibble::V8 || fdict || (cmf_flg % 31) != 0 {
+    //     return Err(DecodeError::InvalidData);
+    // }
 
     let bfinal = reader
         .read(BitSize::Bit1)
@@ -205,21 +215,7 @@ pub fn decode_chc(input: &[u8], len: usize) -> Result<Vec<u8>, DecodeError> {
         .read(BitSize::Bit5)
         .ok_or(DecodeError::InvalidInput)?;
 
-    let cmf_flg = ((cinfo as u16) << 12)
-        | ((cm as u16) << 8)
-        | ((flevel as u16) << 6)
-        | ((fdict as u16) << 5)
-        | (fcheck as u16);
-
-    if cm != Nibble::V8
-        || cinfo >= Nibble::V8
-        || fdict
-        || (cmf_flg % 31) != 0
-        || bfinal != 0b1
-        || btype != 0b10
-        || hlit != 0
-        || hdist != 0
-    {
+    if bfinal != 0b1 || btype != 0b10 || hlit != 0 || hdist != 0 {
         return Err(DecodeError::InvalidData);
     }
 

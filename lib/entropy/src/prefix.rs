@@ -20,7 +20,11 @@ impl CanonicalPrefixCoder {
     /// Repeat 0 `11 + readbits(7)` times
     pub const REP11Z7: u8 = 18;
 
-    pub fn make_prefix_table(freq_table: &[usize], max_len: BitSize) -> Vec<Option<AnyBitValue>> {
+    pub fn make_prefix_table(
+        freq_table: &[usize],
+        max_len: BitSize,
+        min_size: usize,
+    ) -> Vec<Option<AnyBitValue>> {
         let mut freq_table = freq_table
             .iter()
             .enumerate()
@@ -33,7 +37,7 @@ impl CanonicalPrefixCoder {
         let prefix_table = CanonicalPrefixCoder::generate_prefix_table(&freq_table, max_len, None);
         let max_symbol = prefix_table.iter().fold(0usize, |a, v| a.max((v.0).into()));
         let mut prefix_map = Vec::new();
-        prefix_map.resize(1 + max_symbol, None);
+        prefix_map.resize((1 + max_symbol).max(min_size), None);
         for item in prefix_table.iter() {
             prefix_map[item.0] = Some(item.1);
         }
