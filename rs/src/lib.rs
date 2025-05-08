@@ -5,6 +5,7 @@ extern crate alloc;
 use core::fmt::Display;
 use entropy::{
     bits::{AnyBitValue, BitSize, BitStreamReader, BitStreamWriter},
+    nibble::Nibble,
     prefix::{CanonicalPrefixCoder, CanonicalPrefixDecoder, HuffmanTreeNode, PermutationFlavor},
 };
 use serde::{Deserialize, Serialize};
@@ -13,12 +14,12 @@ use wasm_bindgen::prelude::*;
 const HLIT: usize = 257;
 
 #[wasm_bindgen]
-pub fn encode_chc(input: &[u8], max_size: u8) -> Result<String, String> {
-    _encode_chc(input, max_size).map_err(|e| format!("{}", e))
+pub fn encode_chc(input: &[u8], max_len: u8) -> Result<String, String> {
+    _encode_chc(input, max_len).map_err(|e| format!("{}", e))
 }
 
-pub fn _encode_chc(input: &[u8], max_size: u8) -> Result<String, EncodeError> {
-    let max_size = BitSize::new(max_size).ok_or(EncodeError::InvalidInput)?;
+pub fn _encode_chc(input: &[u8], max_len: u8) -> Result<String, EncodeError> {
+    let max_len = BitSize::new(max_len).ok_or(EncodeError::InvalidInput)?;
 
     let mut freq_table = Vec::new();
     freq_table.resize(256, 0usize);
@@ -35,7 +36,7 @@ pub fn _encode_chc(input: &[u8], max_size: u8) -> Result<String, EncodeError> {
     let mut result_tree = Vec::new();
     prefix_table.resize(HLIT, None);
     for item in
-        CanonicalPrefixCoder::generate_prefix_table(&freq_table, max_size, Some(&mut result_tree))
+        CanonicalPrefixCoder::generate_prefix_table(&freq_table, max_len, Some(&mut result_tree))
     {
         prefix_table[item.0 as usize] = Some(item.1);
     }
@@ -81,11 +82,17 @@ pub fn _encode_chc(input: &[u8], max_size: u8) -> Result<String, EncodeError> {
             PermutationFlavor::Deflate,
         )
         .unwrap();
-        zip.push(AnyBitValue::with_bool(true)); // BFINAL: true
+
+        let mut cmf_flg = 0x0800; // CM = 8, CINFO = 0, FDICT = 0, FLEVEL = 0
+        cmf_flg |= 31 - (cmf_flg % 31); // FCHECK
+
+        zip.push_byte((cmf_flg >> 8) as u8); // CMF
+        zip.push_byte(cmf_flg as u8); // FLG
+        zip.push_bool(true); // BFINAL: true
         zip.push(AnyBitValue::new(BitSize::Bit2, 0b10)); // BTYPE: 10 dynamic huffman
         zip.push(AnyBitValue::new(BitSize::Bit5, 0)); // HLIT: 0
         zip.push(AnyBitValue::new(BitSize::Bit5, 0)); // HDIST: 0
-        zip.push(AnyBitValue::with_nibble(zlib_meta.hclen)); // HCLEN
+        zip.push_nibble(zlib_meta.hclen); // HCLEN
         zip.push_slice(&zlib_meta.prefix_table);
         zip.push_slice(&zlib_meta.payload);
         for code in encoded_codes.iter() {
@@ -97,29 +104,29 @@ pub fn _encode_chc(input: &[u8], max_size: u8) -> Result<String, EncodeError> {
     let mut webp = BitStreamWriter::new();
     match prefix_table2.len() {
         1 => {
-            webp.push(AnyBitValue::with_bool(true)); // simple code
-            webp.push(AnyBitValue::with_bool(false)); // num_symbols = 1
+            webp.push_bool(true); // simple code
+            webp.push_bool(false); // num_symbols = 1
             let symbol = prefix_table2[0].0 as u8;
             if symbol < 2 {
-                webp.push(AnyBitValue::with_bool(false)); // is_first_8bit = false
-                webp.push(AnyBitValue::with_bool(symbol != 0));
+                webp.push_bool(false); // is_first_8bit = false
+                webp.push_bool(symbol != 0);
             } else {
-                webp.push(AnyBitValue::with_bool(true)); // is_first_8bit = true
-                webp.push(AnyBitValue::with_byte(symbol));
+                webp.push_bool(true); // is_first_8bit = true
+                webp.push_byte(symbol);
             }
         }
         2 => {
-            webp.push(AnyBitValue::with_bool(true)); // simple code
-            webp.push(AnyBitValue::with_bool(true)); // num_symbols = 2
+            webp.push_bool(true); // simple code
+            webp.push_bool(true); // num_symbols = 2
             let first = prefix_table2[0].0 as u8;
             if first < 2 {
-                webp.push(AnyBitValue::with_bool(false)); // is_first_8bit = false
-                webp.push(AnyBitValue::with_bool(first != 0));
+                webp.push_bool(false); // is_first_8bit = false
+                webp.push_bool(first != 0);
             } else {
-                webp.push(AnyBitValue::with_bool(true)); // is_first_8bit = true
-                webp.push(AnyBitValue::with_byte(first));
+                webp.push_bool(true); // is_first_8bit = true
+                webp.push_byte(first);
             }
-            webp.push(AnyBitValue::with_byte(prefix_table2[1].0 as u8));
+            webp.push_byte(prefix_table2[1].0 as u8);
 
             for code in encoded_codes.iter() {
                 webp.push(code.reversed());
@@ -132,10 +139,10 @@ pub fn _encode_chc(input: &[u8], max_size: u8) -> Result<String, EncodeError> {
             )
             .unwrap();
 
-            webp.push(AnyBitValue::with_bool(false)); // normal code
-            webp.push(AnyBitValue::with_nibble(webp_meta.hclen));
+            webp.push_bool(false); // normal code
+            webp.push_nibble(webp_meta.hclen);
             webp.push_slice(&webp_meta.prefix_table);
-            webp.push(AnyBitValue::with_bool(false)); // max_symbol = default
+            webp.push_bool(false); // max_symbol = default
             webp.push_slice(&webp_meta.payload);
 
             for code in encoded_codes.iter() {
@@ -175,6 +182,16 @@ pub fn _encode_chc(input: &[u8], max_size: u8) -> Result<String, EncodeError> {
 pub fn decode_chc(input: &[u8], len: usize) -> Result<Vec<u8>, DecodeError> {
     let mut reader = BitStreamReader::new(input);
 
+    let cm = reader.read_nibble().ok_or(DecodeError::InvalidInput)?;
+    let cinfo = reader.read_nibble().ok_or(DecodeError::InvalidInput)?;
+    let fcheck = reader
+        .read(BitSize::Bit5)
+        .ok_or(DecodeError::InvalidInput)?;
+    let fdict = reader.read_bool().ok_or(DecodeError::InvalidInput)?;
+    let flevel = reader
+        .read(BitSize::Bit2)
+        .ok_or(DecodeError::InvalidInput)?;
+
     let bfinal = reader
         .read(BitSize::Bit1)
         .ok_or(DecodeError::InvalidInput)?;
@@ -188,7 +205,21 @@ pub fn decode_chc(input: &[u8], len: usize) -> Result<Vec<u8>, DecodeError> {
         .read(BitSize::Bit5)
         .ok_or(DecodeError::InvalidInput)?;
 
-    if bfinal != 0b1 || btype != 0b10 || hlit != 0 || hdist != 0 {
+    let cmf_flg = ((cinfo as u16) << 12)
+        | ((cm as u16) << 8)
+        | ((flevel as u16) << 6)
+        | ((fdict as u16) << 5)
+        | (fcheck as u16);
+
+    if cm != Nibble::V8
+        || cinfo >= Nibble::V8
+        || fdict
+        || (cmf_flg % 31) != 0
+        || bfinal != 0b1
+        || btype != 0b10
+        || hlit != 0
+        || hdist != 0
+    {
         return Err(DecodeError::InvalidData);
     }
 
