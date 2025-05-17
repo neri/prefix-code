@@ -15,8 +15,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
-name = "entropy"
+name = "compress"
 version = "0.1.0"
+source = "git+https://github.com/neri/compress.git#45a4a232e7e7c98b3e8a1728cec0f21d1d9989d4"
 
 [[package]]
 name = "itoa"
@@ -25,10 +26,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
-name = "libprefix"
+name = "libentropy"
 version = "0.1.0"
 dependencies = [
- "entropy",
+ "compress",
  "serde",
  "serde_json",
  "wasm-bindgen",

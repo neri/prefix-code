@@ -10,7 +10,7 @@ const REPOSITORY_URL = "https://github.com/neri/prefix-code";
 const VERSION_STRING = "0.1.0";
 
 import './style.css';
-import * as libprefix from '../lib/libprefix';
+import * as libentropy from '../lib/libentropy';
 import { HASH } from "./hash";
 import { Dialog } from './dialog';
 
@@ -114,7 +114,7 @@ class App {
         const input = new TextEncoder().encode(inputText);
         let result: string;
         try {
-            result = libprefix.encode_chc(input, maxBitSize);
+            result = libentropy.encode_chc(input, maxBitSize);
         } catch (e) {
             {
                 const hrTag = document.createElement('hr');
@@ -217,6 +217,28 @@ class App {
             resultArea.appendChild(detailsTag);
         }
 
+
+        {
+            try {
+                const decoded =
+                    libentropy.decode_chc(json.encoded_zlib, input.length);
+
+                if (decoded.toString() === input.toString()) {
+                    // ok, identical
+                } else {
+                    const divTag = document.createElement('div');
+                    divTag.className = 'error';
+                    divTag.appendChild(document.createTextNode(`DECODE FAILED, PLEASE REPORT DETAILS`));
+                    resultArea.appendChild(divTag);
+                }
+            } catch (e) {
+                const divTag = document.createElement('div');
+                divTag.className = 'error';
+                divTag.appendChild(document.createTextNode(`DECODE ERROR: ${String(e)}, PLEASE REPORT DETAILS`));
+                resultArea.appendChild(divTag);
+            }
+        }
+
         {
             const encodedWebpBase64 = arrayToHex(json.encoded_webp, ' ');
             //arrayBufferToBase64(json.encoded_webp);
@@ -241,27 +263,6 @@ class App {
             detailsTag.appendChild(preTag);
 
             resultArea.appendChild(detailsTag);
-        }
-
-        {
-            try {
-                const decoded =
-                    libprefix.decode_chc(json.encoded_zlib, input.length);
-
-                if (decoded.toString() === input.toString()) {
-                    // ok, identical
-                } else {
-                    const divTag = document.createElement('div');
-                    divTag.className = 'error';
-                    divTag.appendChild(document.createTextNode(`DECODE FAILED, PLEASE REPORT DETAILS`));
-                    resultArea.appendChild(divTag);
-                }
-            } catch (e) {
-                const divTag = document.createElement('div');
-                divTag.className = 'error';
-                divTag.appendChild(document.createTextNode(`DECODE ERROR: ${String(e)}, PLEASE REPORT DETAILS`));
-                resultArea.appendChild(divTag);
-            }
         }
 
         {
