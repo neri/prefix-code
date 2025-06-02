@@ -17,7 +17,10 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 [[package]]
 name = "compress"
 version = "0.1.0"
-source = "git+https://github.com/neri/compress.git#45a4a232e7e7c98b3e8a1728cec0f21d1d9989d4"
+source = "git+https://github.com/neri/compress.git?rev=fbf52c474557f641418acdf17a3234500b517de6#fbf52c474557f641418acdf17a3234500b517de6"
+dependencies = [
+ "libm",
+]
 
 [[package]]
 name = "itoa"
@@ -34,6 +37,12 @@ dependencies = [
  "serde_json",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "libm"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
 name = "log"

@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use compress::{
-    deflate::Deflate,
+    deflate,
     entropy::prefix::{CanonicalPrefixCoder, HuffmanTreeNode, PermutationFlavor},
     num::bits::{BitSize, BitStreamWriter, VarBitValue},
 };
@@ -75,6 +75,11 @@ pub fn _encode_chc(input: &[u8], max_len: u8) -> Result<String, EncodeError> {
 
     let mut zip = BitStreamWriter::new();
     {
+        let mut prefix_table = prefix_table.to_owned();
+        if freq_table.len() == 1 {
+            // fallback when single symbol
+            prefix_table[256] = Some(VarBitValue::with_bool(true));
+        }
         let zlib_meta = CanonicalPrefixCoder::encode_single_prefix_table(
             &prefix_table,
             PermutationFlavor::Deflate,
@@ -173,7 +178,7 @@ pub fn _encode_chc(input: &[u8], max_len: u8) -> Result<String, EncodeError> {
 
 #[wasm_bindgen]
 pub fn decode_chc(input: &[u8], len: usize) -> Result<Vec<u8>, DecodeError> {
-    Deflate::inflate(input, len).map_err(|_| DecodeError::InvalidData)
+    deflate::inflate(input, len).map_err(|_| DecodeError::InvalidData)
 }
 
 fn stringify_char(data: u8) -> String {

@@ -9,7 +9,7 @@ version = "0.1.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-compress = { git = "https://github.com/neri/compress.git" }
+compress = { git = "https://github.com/neri/compress.git", rev = "fbf52c474557f641418acdf17a3234500b517de6" }
 # compress = { path = "../../compress" }
 
 serde = { version = "1.0", features = ["derive"] }
