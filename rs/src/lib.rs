@@ -5,7 +5,10 @@ extern crate alloc;
 use compress::{
     deflate,
     entropy::prefix::{CanonicalPrefixCoder, HuffmanTreeNode, PermutationFlavor},
-    num::bits::{BitSize, BitStreamWriter, VarBitValue},
+    num::{
+        VarLenInteger,
+        bits::{BitSize, BitStreamWriter},
+    },
 };
 use core::fmt::Display;
 use serde::{Deserialize, Serialize};
@@ -33,9 +36,11 @@ pub fn _encode_chc(input: &[u8], max_len: u8) -> Result<String, EncodeError> {
     let mut prefix_table = Vec::new();
     let mut result_tree = Vec::new();
     prefix_table.resize(258, None);
-    for item in
-        CanonicalPrefixCoder::generate_prefix_table(&freq_table, max_len, Some(&mut result_tree))
-    {
+    for item in CanonicalPrefixCoder::generate_prefix_mapping_table(
+        &freq_table,
+        max_len,
+        Some(&mut result_tree),
+    ) {
         prefix_table[item.0 as usize] = Some(item.1);
     }
 
@@ -78,7 +83,7 @@ pub fn _encode_chc(input: &[u8], max_len: u8) -> Result<String, EncodeError> {
         let mut prefix_table = prefix_table.to_owned();
         if freq_table.len() == 1 {
             // fallback when single symbol
-            prefix_table[256] = Some(VarBitValue::with_bool(true));
+            prefix_table[256] = Some(VarLenInteger::with_bool(true));
         }
         let zlib_meta = CanonicalPrefixCoder::encode_single_prefix_table(
             &prefix_table,
@@ -87,9 +92,9 @@ pub fn _encode_chc(input: &[u8], max_len: u8) -> Result<String, EncodeError> {
         .unwrap();
 
         zip.push_bool(true); // BFINAL: true
-        zip.push(VarBitValue::new(BitSize::Bit2, 0b10)); // BTYPE: 10 dynamic huffman
-        zip.push(VarBitValue::new(BitSize::Bit5, 0)); // HLIT: 0
-        zip.push(VarBitValue::new(BitSize::Bit5, 0)); // HDIST: 0
+        zip.push(VarLenInteger::new(BitSize::Bit2, 0b10)); // BTYPE: 10 dynamic huffman
+        zip.push(VarLenInteger::new(BitSize::Bit5, 0)); // HLIT: 0
+        zip.push(VarLenInteger::new(BitSize::Bit5, 0)); // HDIST: 0
         zip.push_nibble(zlib_meta.hclen); // HCLEN
         zip.push_slice(&zlib_meta.prefix_table);
         zip.push_slice(&zlib_meta.content);

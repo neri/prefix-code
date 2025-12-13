@@ -10,18 +10,19 @@ const REPOSITORY_URL = "https://github.com/neri/prefix-code";
 const VERSION_STRING = "0.1.0";
 
 import './style.css';
-import * as libentropy from '../lib/libentropy';
+import initWasm, * as libentropy from '../lib/libentropy';
 import { HASH } from "./hash";
 import { Dialog } from './dialog';
 
 const $ = (x: string) => document.querySelector(x);
 
+//@ts-ignore
 const alert = (x: string) => new AlertDialog(x).show();
 
 const debounce = (fn: () => void, interval: number) => {
-    let timer: NodeJS.Timeout | null = null;
+    let timer: number | undefined = undefined;
     return () => {
-        if (timer != null) {
+        if (timer != undefined) {
             clearTimeout(timer);
         }
         timer = setTimeout(() => fn(), interval)
@@ -30,13 +31,15 @@ const debounce = (fn: () => void, interval: number) => {
 
 class App {
 
-    private currentTitle = '';
-    private baseName = 'download';
+    // private currentTitle = '';
+    // private baseName = 'download';
 
     triggerCompress = debounce(() => this.updateResult(), 500);
 
-    onload() {
-        const html = $('html') as HTMLElement;
+    async onload() {
+        // const html = $('html') as HTMLElement;
+
+        await initWasm();
 
         document.title = APP_NAME;
         document.querySelectorAll('.app_name').forEach((element, _key, _parent) => {
@@ -61,7 +64,14 @@ class App {
             element.parentElement?.replaceChild(appVerTextNode, element);
         });
 
-        ($('#inputText') as HTMLTextAreaElement | null)?.addEventListener('keyup', (e: Event) => {
+        $('#menuButton')?.addEventListener('click', () => {
+            new MainMenu().show();
+        });
+        $('#aboutMenuItem')?.addEventListener('click', () => {
+            new AboutDialog().show();
+        });
+
+        ($('#inputText') as HTMLTextAreaElement | null)?.addEventListener('keyup', () => {
             this.triggerCompress();
         });
 
@@ -177,12 +187,17 @@ class App {
 
             const ideal_bits = json.input_len * json.input_entropy;
             if (ideal_bits > 0) {
+                message += `, ideal ${formatNumber(ideal_bits, 1)} bits`;
                 if (json.output_bits > Math.ceil(ideal_bits)) {
-                    message += `, ideal ${formatNumber(ideal_bits, 1)} bits (${formatNumber(json.output_bits / ideal_bits * 100.0)}%)`;
-                } else {
-                    message += `, ideal ${formatNumber(ideal_bits, 1)} bits`;
+                    const rate = json.output_bits / ideal_bits * 100.0 - 100.0;
+                    if (rate >= 0.0) {
+                        message += ` (+${formatNumber(rate)}%)`;
+                    } else {
+                        message += ` (${formatNumber(rate)}%)`;
+                    }
                 }
             }
+
             summaryTag.appendChild(document.createTextNode(message));
             detailsTag.appendChild(summaryTag);
 
@@ -301,6 +316,7 @@ class App {
                 trTag.appendChild(thTag);
 
                 const td1Tag = document.createElement('td');
+                td1Tag.className = "center";
                 td1Tag.appendChild(document.createTextNode(String(item.symbol_char)));
                 trTag.appendChild(td1Tag);
 
@@ -314,12 +330,12 @@ class App {
                 trTag.appendChild(td3Tag);
 
                 const td4Tag = document.createElement('td');
-                td4Tag.className = "center";
+                td4Tag.className = "right";
                 td4Tag.appendChild(document.createTextNode(String(item.len)));
                 trTag.appendChild(td4Tag);
 
                 const td5Tag = document.createElement('td');
-                td5Tag.className = "right";
+                // td5Tag.className = "left";
                 td5Tag.appendChild(document.createTextNode(String(item.code)));
                 trTag.appendChild(td5Tag);
 
@@ -417,6 +433,7 @@ if (document.readyState === 'loading') {
     app.onload();
 }
 
+//@ts-ignore
 const arrayBufferToBase64 = (bytes: Uint8Array) => {
     let array = [];
     const len = bytes.length;
@@ -436,6 +453,7 @@ const formatNumber = (num: number, fracDigits: number = 3): string => {
     return num.toLocaleString('en', { minimumFractionDigits: fracDigits, maximumFractionDigits: fracDigits });
 }
 
+//@ts-ignore
 const roundToEven = (v: number): number => {
     if (!Number.isFinite(v)) {
         return NaN;

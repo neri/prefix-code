@@ -3,6 +3,7 @@
 
 TS_ROOT	= ts/
 TS_SRC	= $(TS_ROOT)src/
+TS_LIB	= $(TS_ROOT)lib/
 TS_DIST	= $(TS_ROOT)dist/
 TS_MAIN	= $(TS_DIST)main.js
 RS_SRC	= rs/
@@ -17,19 +18,18 @@ clean:
 
 update:
 	cargo update
-	(cd $(TS_ROOT); npm update)
+	(cd $(TS_ROOT); pnpm update)
 
 debug:
 	(cd $(RS_SRC); cargo build)
-	cp target/wasm32-unknown-unknown/debug/libentropy.wasm $(RS_LIB)
+	cp target/wasm32-unknown-unknown/debug/libimage.wasm $(RS_LIB)
 
 $(RS_LIB): $(RS_SRC)src/*.rs
-	echo "export const HASH = \"`git rev-parse --short HEAD`\";" > $(TS_ROOT)src/hash.ts
-	(cd $(RS_SRC); cargo build --release)
-	wasm-bindgen target/wasm32-unknown-unknown/release/libentropy.wasm --out-dir $(TS_ROOT)lib
+	(cd $(RS_SRC); wasm-pack build --target web --out-dir ../$(TS_LIB))
 
 $(TS_MAIN): $(RS_LIB) $(TS_SRC)*.ts
-	(cd $(TS_ROOT); npm i; npm run build)
+	echo "export const HASH = \"`git rev-parse --short HEAD`\";" > $(TS_ROOT)src/hash.ts
+	(cd $(TS_ROOT); pnpm i; pnpm run build)
 
 server:
-	(cd $(TS_ROOT); npm run start)
+	(cd $(TS_ROOT); pnpm dev)

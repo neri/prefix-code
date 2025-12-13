@@ -7,7 +7,7 @@
 
 - You can experiment with encoding your input text in <a href="https://en.wikipedia.org/wiki/Canonical_Huffman_code" target="_blank">Canonical Huffman code</a>.
 - The data you enter will not be transmitted over the network.
-- Output formats are subject to change without notice.
+- Since this tool is not intended for practical use, the output format may change without notice.
 
 ## License
 

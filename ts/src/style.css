@@ -60,7 +60,7 @@ textarea {
     display: inline-block;
     margin: 4px 2px;
     padding: 4px 8px;
-    border: transparent solid 1px;
+    border: rgba(25%, 25%, 25%, 0.5) solid 1px;
     border-radius: 4px;
     font-size: 13px;
     cursor: pointer;
@@ -70,15 +70,14 @@ textarea {
 }
 
 .button {
-    background: #8a8a8a;
-    color: #EEE;
+    color: #424242;
     text-shadow: none;
 }
 
 .button:hover,
 .button:focus {
-    border-color: rgba(75%, 75%, 75%, 0.5);
-    color: #FFF;
+    background: #ddd;
+    border-color: #2196F3;
 }
 
 .buttonActive {
@@ -114,6 +113,10 @@ textarea {
     cursor: default;
     text-decoration: none;
     text-shadow: none;
+}
+
+li .button {
+    width: 87%;
 }
 
 fieldset {
@@ -216,10 +219,10 @@ tr:nth-child(even) {
     position: absolute;
     -webkit-backdrop-filter: blur(16px);
     backdrop-filter: blur(16px);
-    background: rgba(16.7%, 16.7%, 16.7%, 0.5);
-    color: #CCC;
+    background: rgba(93.7%, 93.7%, 93.7%, 0.5);
+    color: #424242;
     border-radius: 8px;
-    box-shadow: 0 5px 15px 1px rgba(0, 0, 0, 0.5);
+    box-shadow: 5px 5px 15px rgba(0, 0, 0, 0.5);
     left: 50%;
     max-width: 95%;
     min-width: 240px;
@@ -259,6 +262,7 @@ tr:nth-child(even) {
 
 .dialogCloseButton {
     background: transparent;
+    color: #424242;
     margin: 0;
     padding: 0 12px;
     border: none;
@@ -272,8 +276,7 @@ tr:nth-child(even) {
 .dialogCloseButton:hover,
 .dialogCloseButton:focus {
     background: transparent;
-    color: #FFF;
-    text-shadow: 0px 0px 8px #f44336;
+    text-shadow: 0px 0px 15px #f44336;
 }
 
 #menuButton {
@@ -296,6 +299,20 @@ tr:nth-child(even) {
     margin: 1em;
 }
 
+nav ul {
+    margin: 0;
+    padding: 0;
+}
+
+nav li {
+    list-style: none;
+    margin: 0.5em 0;
+}
+
+.center {
+    text-align: center;
+}
+
 .app_version {
     font-style: italic;
     text-align: center;
@@ -307,4 +324,14 @@ tr:nth-child(even) {
     width: 18px;
     height: 18px;
     padding: 0;
+}
+
+.ic_menu_white {
+    display: inline-block;
+    min-width: 18px;
+    min-height: 18px;
+    vertical-align: middle;
+    padding: 0;
+    background: image-set(url('ext/material-design-icons/ic_menu_white_18dp.png') 1x, url('ext/material-design-icons/ic_menu_white_36dp.png') 2x) no-repeat;
+    background-size: 18px 18px;
 }

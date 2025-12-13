@@ -5,11 +5,19 @@
     <title>*</title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="theme-color" content="#1976D2" />
+    <script type="module" src="/src/main.ts"></script>
 </head>
 
 <header>
+    <a id="menuButton"><span class="ic_menu_white">&nbsp;</span></a>
     <span class="app_name">&nbsp;</span>
 </header>
+
+<nav id="dialogMainMenu" class="dialogSeed">
+    <ul>
+        <li><a id="aboutMenuItem" class="button">About</a></li>
+    </ul>
+</nav>
 
 <div id="main" class="main">
     <textarea id="inputText" rows="5" placeholder="Enter the text to be encoded here.">abracadabra</textarea><br>
@@ -40,26 +48,6 @@
 </div>
 
 <hr>
-<h2>About:</h2>
-<p>
-    You can experiment with compressing the input text with <a
-        href="https://en.wikipedia.org/wiki/Canonical_Huffman_code" target="_blank">Canonical Huffman code</a>.<br>
-    As a matter of fact, contrary to expectations, the size of normal text will hardly be reduced.
-</p>
-<ul>
-    <li>The data you enter will not be transmitted over the network.</li>
-    <li>Output formats are subject to change without notice.</li>
-</ul>
-<p>
-    <span class="repository_button"></span>
-</p>
-
-<hr>
-<address>
-    <span class="app_name">&nbsp;</span> (<span class="app_version"></span>)<br>
-    <span class="copyright"></span>
-</address>
-
 
 <div id="dialogAlert" class="dialogSeed">
     <p id="alertMessage"></p>
@@ -67,8 +55,19 @@
 
 <div id="dialogAbout" class="dialogSeed">
     <h1><span class="app_name">&nbsp;</span></h1>
-    <p><span class="copyright"></span></p>
-    <p><span class="app_version"></span></p>
+    <p class="center"><span class="app_version"></span></p>
+    <p class="center"><span class="copyright"></span></p>
+
+    <hr>
+    <p>
+        You can experiment with compressing the input text with <a
+            href="https://en.wikipedia.org/wiki/Canonical_Huffman_code" target="_blank">Canonical Huffman code</a>.
+    </p>
+    <ul>
+        <li>The data you enter will not be transmitted over the network.</li>
+        <li>Since this tool is not intended for practical use, the output format may change without notice.</li>
+    </ul>
+
     <hr>
     <span class="repository_button"></span>
 </div>

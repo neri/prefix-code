@@ -1,0 +1,17 @@
+[tasks.server]
+description = "Run a server"
+run = "make server"
+
+[tasks.build]
+description = "Build"
+run = "make"
+
+[tasks.update]
+confirm = "Are you ok?"
+description = "Update dependencies"
+run = "make update"
+
+[tasks.clean]
+confirm = "Are you ok?"
+description = "Clean up"
+run = "make clean"
