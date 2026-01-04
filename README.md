@@ -1,6 +1,6 @@
 # Playground for Compression
 
-- [Launch now](https://nerry.jp/prefix-code/)
+- [Launch now](https://neri.github.io/prefix-code/)
 - [Repository](https://github.com/neri/prefix-code)
 
 ## Features

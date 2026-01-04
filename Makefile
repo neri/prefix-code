@@ -7,14 +7,13 @@ TS_LIB	= $(TS_ROOT)lib/
 TS_DIST	= $(TS_ROOT)dist/
 TS_MAIN	= $(TS_DIST)main.js
 RS_SRC	= rs/
-RS_LIB	= $(TS_ROOT)lib/libentropy.wasm
+RS_LIB	= $(TS_ROOT)lib/libentropy_bg.wasm
 
 all: $(RS_LIB) $(TS_MAIN)
 
 clean:
 	(cd $(RS_SRC); cargo clean)
-	-rm $(RS_LIB) $(TS_MAIN)
-	-rm -rf $(TS_DIST)
+	-rm -rf node_modules $(TS_ROOT)node_modules $(TS_LIB) $(TS_DIST)
 
 update:
 	cargo update
@@ -28,7 +27,6 @@ $(RS_LIB): $(RS_SRC)src/*.rs
 	(cd $(RS_SRC); wasm-pack build --target web --out-dir ../$(TS_LIB))
 
 $(TS_MAIN): $(RS_LIB) $(TS_SRC)*.ts
-	echo "export const HASH = \"`git rev-parse --short HEAD`\";" > $(TS_ROOT)src/hash.ts
 	(cd $(TS_ROOT); pnpm i; pnpm run build)
 
 server:
