@@ -176,7 +176,7 @@ class App {
 
         {
             const h3tag = document.createElement('h3');
-            h3tag.appendChild(document.createTextNode("Encoded Codes:"));
+            h3tag.appendChild(document.createTextNode("Prefix Codes:"));
             resultArea.appendChild(h3tag);
 
             const detailsTag = document.createElement('details');
@@ -211,7 +211,7 @@ class App {
 
         {
             const h3tag = document.createElement('h3');
-            h3tag.appendChild(document.createTextNode("Output like deflate:"));
+            h3tag.appendChild(document.createTextNode("Encoded like deflate:"));
             resultArea.appendChild(h3tag);
 
             const detailsTag = document.createElement('details');
@@ -259,7 +259,7 @@ class App {
             //arrayBufferToBase64(json.encoded_webp);
 
             const h3tag = document.createElement('h3');
-            h3tag.appendChild(document.createTextNode("Output like webp:"));
+            h3tag.appendChild(document.createTextNode("Encoded like webp:"));
             resultArea.appendChild(h3tag);
 
             const detailsTag = document.createElement('details');
@@ -300,7 +300,7 @@ class App {
                 th3Tag.appendChild(document.createTextNode("Frequency"));
                 trTag.appendChild(th3Tag);
                 const th5Tag = document.createElement('th');
-                th5Tag.appendChild(document.createTextNode("Bit Length"));
+                th5Tag.appendChild(document.createTextNode("Length"));
                 trTag.appendChild(th5Tag);
                 const th6Tag = document.createElement('th');
                 th6Tag.appendChild(document.createTextNode("Canonical Prefix Code"));
@@ -349,13 +349,13 @@ class App {
             h3Tag.appendChild(document.createTextNode("Huffman Tree for reference:"));
             resultArea.appendChild(h3Tag);
 
-            const preTag = document.createElement('pre');
-            preTag.appendChild(document.createTextNode(json.huffman_tree));
-            resultArea.appendChild(preTag);
-
             const divTag = document.createElement('div');
             divTag.appendChild(document.createTextNode("(The actual code assignment may differ)"));
             resultArea.appendChild(divTag);
+
+            const preTag = document.createElement('pre');
+            preTag.appendChild(document.createTextNode(json.huffman_tree));
+            resultArea.appendChild(preTag);
         }
 
     }

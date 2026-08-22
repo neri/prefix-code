@@ -58,26 +58,25 @@ textarea {
 .buttonDestructive,
 .buttonFace {
     display: inline-block;
+    box-sizing: border-box;
     margin: 4px 2px;
-    padding: 4px 8px;
+    padding: 4px 12px;
     border: rgba(25%, 25%, 25%, 0.5) solid 1px;
-    border-radius: 4px;
-    font-size: 13px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.25;
     cursor: pointer;
     text-decoration: none;
     -webkit-app-region: no-drag;
     transition: all 0.5s ease-out;
+    appearance: none;
+    vertical-align: middle;
 }
 
 .button {
-    color: #424242;
+    background: var(--gray);
+    color: var(--white);
     text-shadow: none;
-}
-
-.button:hover,
-.button:focus {
-    background: #ddd;
-    border-color: #2196F3;
 }
 
 .buttonActive {
@@ -86,24 +85,10 @@ textarea {
     text-shadow: none;
 }
 
-.buttonActive:hover,
-.buttonActive:focus {
-    border-color: rgba(75%, 75%, 75%, 0.5);
-    color: var(--white);
-    text-shadow: 1px 1px 3px rgba(100%, 100%, 100%, 0.125);
-}
-
 .buttonDestructive {
     background: var(--red);
     color: var(--white);
     text-shadow: none;
-}
-
-.buttonDestructive:hover,
-.buttonDestructive:focus {
-    border-color: rgba(75%, 75%, 75%, 0.5);
-    color: var(--white);
-    text-shadow: 1px 1px 3px rgba(100%, 100%, 100%, 0.125);
 }
 
 .button[disabled] {
@@ -217,9 +202,7 @@ tr:nth-child(even) {
     display: flex;
     flex-direction: column;
     position: absolute;
-    -webkit-backdrop-filter: blur(16px);
-    backdrop-filter: blur(16px);
-    background: rgba(93.7%, 93.7%, 93.7%, 0.5);
+    background: #ffffff;
     color: #424242;
     border-radius: 8px;
     box-shadow: 5px 5px 15px rgba(0, 0, 0, 0.5);
